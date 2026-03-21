@@ -42,21 +42,23 @@ const (
 type MilvusArchProfile string
 
 const (
-	ArchProfileV24     MilvusArchProfile = "v24"
-	ArchProfileV26     MilvusArchProfile = "v26"
+	ArchProfileV24     MilvusArchProfile = "v2.4"
+	ArchProfileV26     MilvusArchProfile = "v2.6"
 	ArchProfileUnknown MilvusArchProfile = "unknown"
 )
 
 func DetectArchProfile(version string) MilvusArchProfile {
 	major, minor, ok := parseMajorMinor(version)
-	if !ok || major != 2 {
+	if !ok {
 		return ArchProfileUnknown
 	}
 
 	switch {
-	case minor == 4 || minor == 5:
+	case major == 2 && (minor == 4 || minor == 5):
 		return ArchProfileV24
-	case minor >= 6:
+	case major == 2 && minor >= 6:
+		return ArchProfileV26
+	case major > 2:
 		return ArchProfileV26
 	default:
 		return ArchProfileUnknown
@@ -254,10 +256,18 @@ type ClusterInventory struct {
 type MilvusInventory struct {
 	Reachable            bool                  `json:"reachable"`
 	ServerVersion        string                `json:"server_version,omitempty"`
-	Databases            []string              `json:"databases,omitempty"`
+	DatabaseCount        int                   `json:"database_count"`
+	CollectionCount      int                   `json:"collection_count"`
+	DatabaseNames        []string              `json:"database_names,omitempty"`
+	Databases            []DatabaseInventory   `json:"databases,omitempty"`
 	Collections          []CollectionInventory `json:"collections,omitempty"`
 	CapabilityDegraded   bool                  `json:"capability_degraded,omitempty"`
 	DegradedCapabilities []string              `json:"degraded_capabilities,omitempty"`
+}
+
+type DatabaseInventory struct {
+	Name        string   `json:"name"`
+	Collections []string `json:"collections,omitempty"`
 }
 
 type CollectionInventory struct {
@@ -313,7 +323,7 @@ type ProbeOutputView struct {
 	RW           RWProbeResult           `json:"rw"`
 }
 
-type ClusterOutputView struct {
+type ClusterInfo struct {
 	Name          string            `json:"name"`
 	MilvusURI     string            `json:"milvus_uri"`
 	Namespace     string            `json:"namespace"`
@@ -322,8 +332,10 @@ type ClusterOutputView struct {
 	MQType        string            `json:"mq_type"`
 }
 
+type ClusterOutputView = ClusterInfo
+
 type AnalysisResult struct {
-	Cluster    ClusterOutputView `json:"cluster"`
+	Cluster    ClusterInfo       `json:"cluster"`
 	Result     FinalResult       `json:"result"`
 	Standby    bool              `json:"standby"`
 	Confidence ConfidenceLevel   `json:"confidence"`
@@ -337,13 +349,19 @@ type AnalysisResult struct {
 	Checks     []CheckResult     `json:"checks,omitempty"`
 }
 
-type MetadataSnapshot struct{}
+type MetadataSnapshot struct {
+	Cluster ClusterInfo     `json:"cluster"`
+	Milvus  MilvusInventory `json:"milvus"`
+	K8s     K8sInventory    `json:"k8s"`
+}
 
 type AnalyzeInput struct {
 	Config    *Config
 	Inventory ClusterInventory
 	Snapshot  MetadataSnapshot
 	Checks    []CheckResult
+	Warnings  []string
+	Failures  []string
 	StartedAt time.Time
 	EndedAt   time.Time
 }

@@ -4,11 +4,10 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
-	"github.com/weiqinzhou3/milvus-health/internal/collectors"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
-	"github.com/weiqinzhou3/milvus-health/internal/platform"
 )
 
 func analysisConfig() *model.Config {
@@ -21,118 +20,125 @@ func analysisConfig() *model.Config {
 		},
 		K8s: model.K8sConfig{Namespace: "milvus"},
 		Probe: model.ProbeConfig{
-			Read: model.ReadProbeConfig{MinSuccessTargets: 1},
-			RW:   model.RWProbeConfig{Enabled: false},
-		},
-		TimeoutSec: 1,
-	}
-}
-
-func newAnalyzer(milvusClient *platform.FakeMilvusClient, k8sClient *platform.FakeK8sClient) analyzers.InventoryAnalyzer {
-	return analyzers.InventoryAnalyzer{
-		MilvusCollector: collectors.DefaultMilvusInventoryCollector{
-			Factory: platform.FakeMilvusClientFactory{Client: milvusClient},
-		},
-		K8sCollector: collectors.DefaultK8sInventoryCollector{
-			Factory: platform.FakeK8sClientFactory{Client: k8sClient},
+			RW: model.RWProbeConfig{Enabled: false},
 		},
 	}
 }
 
-func TestAnalyzer_ReturnsFAIL_WhenMilvusUnavailable(t *testing.T) {
+func TestAnalyzer_ReturnsFailWhenRunnerCapturedMilvusFailure(t *testing.T) {
 	t.Parallel()
 
-	analyzer := newAnalyzer(
-		&platform.FakeMilvusClient{PingErr: context.DeadlineExceeded},
-		&platform.FakeK8sClient{},
-	)
-
-	result, err := analyzer.Analyze(context.Background(), model.AnalyzeInput{Config: analysisConfig()})
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:        "demo",
+				MilvusURI:   "127.0.0.1:19530",
+				Namespace:   "milvus",
+				ArchProfile: model.ArchProfileUnknown,
+				MQType:      "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusFail, Message: "Milvus is unavailable"},
+		},
+		Failures:  []string{"get milvus version: deadline exceeded"},
+		StartedAt: time.Unix(0, 0),
+		EndedAt:   time.Unix(0, int64(250*time.Millisecond)),
+	})
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
 	if result.Result != model.FinalResultFAIL {
 		t.Fatalf("Result = %s, want FAIL", result.Result)
 	}
-}
-
-func TestAnalyzer_ReturnsWARN_WhenInventoryPartial(t *testing.T) {
-	t.Parallel()
-
-	analyzer := newAnalyzer(
-		&platform.FakeMilvusClient{
-			Version:      "2.4.7",
-			DatabasesErr: platform.ErrCapabilityUnavailable,
-			Collections: map[string][]platform.MilvusCollection{
-				"default": {{Database: "default", Name: "book"}},
-			},
-		},
-		&platform.FakeK8sClient{},
-	)
-
-	result, err := analyzer.Analyze(context.Background(), model.AnalyzeInput{Config: analysisConfig()})
-	if err != nil {
-		t.Fatalf("Analyze() error = %v", err)
-	}
-	if result.Result != model.FinalResultWARN {
-		t.Fatalf("Result = %s, want WARN", result.Result)
+	if result.Confidence != model.ConfidenceLow {
+		t.Fatalf("Confidence = %s, want low", result.Confidence)
 	}
 }
 
-func TestAnalyzer_ReturnsPASS_WhenMinimalChecksPass(t *testing.T) {
+func TestAnalyzer_ReturnsPassForSuccessfulMilvusInventory(t *testing.T) {
 	t.Parallel()
 
-	analyzer := newAnalyzer(
-		&platform.FakeMilvusClient{
-			Version:   "2.6.1",
-			Databases: []string{"default"},
-			Collections: map[string][]platform.MilvusCollection{
-				"default": {{Database: "default", Name: "book", ShardNum: 2, FieldCount: 3}},
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			Milvus: model.MilvusInventory{
+				ServerVersion:   "2.6.1",
+				DatabaseCount:   1,
+				CollectionCount: 2,
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book", "movie"}},
+				},
 			},
 		},
-		&platform.FakeK8sClient{
-			Pods: []platform.PodInfo{{Name: "milvus-0", Phase: "Running", Ready: true}},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
 		},
-	)
-
-	result, err := analyzer.Analyze(context.Background(), model.AnalyzeInput{Config: analysisConfig()})
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
+			{Name: "milvus-version", Status: model.CheckStatusPass, Message: "Milvus version collected successfully"},
+			{Name: "milvus-inventory", Status: model.CheckStatusPass, Message: "Milvus inventory collected successfully"},
+		},
+		StartedAt: time.Unix(0, 0),
+		EndedAt:   time.Unix(0, int64(500*time.Millisecond)),
+	})
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
 	if result.Result != model.FinalResultPASS {
 		t.Fatalf("Result = %s, want PASS", result.Result)
 	}
-	if result.Summary.CollectionCount != 1 || result.Summary.PodCount != 1 {
+	if result.Summary.DatabaseCount != 1 || result.Summary.CollectionCount != 2 {
 		t.Fatalf("Summary = %#v", result.Summary)
+	}
+	if result.ElapsedMS != 500 {
+		t.Fatalf("ElapsedMS = %d, want 500", result.ElapsedMS)
 	}
 }
 
-func TestAnalyzer_MapsPodReadinessToChecks(t *testing.T) {
+func TestAnalyzer_ReturnsWarnWhenWarningsPresent(t *testing.T) {
 	t.Parallel()
 
-	analyzer := newAnalyzer(
-		&platform.FakeMilvusClient{
-			Version:   "2.6.1",
-			Databases: []string{"default"},
-			Collections: map[string][]platform.MilvusCollection{
-				"default": {{Database: "default", Name: "book"}},
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.4.7",
+				ArchProfile:   model.ArchProfileV24,
+				MQType:        "unknown",
 			},
 		},
-		&platform.FakeK8sClient{
-			Pods: []platform.PodInfo{{Name: "proxy-0", Phase: "Running", Ready: false}},
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
+			{Name: "milvus-inventory", Status: model.CheckStatusWarn, Message: "partial inventory"},
 		},
-	)
-
-	result, err := analyzer.Analyze(context.Background(), model.AnalyzeInput{Config: analysisConfig()})
+		Warnings:  []string{"partial inventory"},
+		StartedAt: time.Unix(0, 0),
+		EndedAt:   time.Unix(0, int64(100*time.Millisecond)),
+	})
 	if err != nil {
 		t.Fatalf("Analyze() error = %v", err)
 	}
 	if result.Result != model.FinalResultWARN {
 		t.Fatalf("Result = %s, want WARN", result.Result)
 	}
+	if result.Confidence != model.ConfidenceMedium {
+		t.Fatalf("Confidence = %s, want medium", result.Confidence)
+	}
 	found := false
 	for _, check := range result.Checks {
-		if check.Name == "k8s-pod-readiness" && check.Status == model.CheckStatusWarn && strings.Contains(check.Message, "proxy-0") {
+		if check.Status == model.CheckStatusWarn && strings.Contains(check.Message, "partial") {
 			found = true
 		}
 	}

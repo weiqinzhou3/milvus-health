@@ -10,10 +10,10 @@ import (
 
 	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
-	"github.com/weiqinzhou3/milvus-health/internal/collectors"
+	collectormilvus "github.com/weiqinzhou3/milvus-health/internal/collectors/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/config"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
-	"github.com/weiqinzhou3/milvus-health/internal/platform"
+	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
@@ -163,14 +163,10 @@ func defaultDependencies() dependencies {
 			Validator:       config.ConfigValidator{},
 			DefaultApplier:  config.DefaultValueApplier{},
 			OverrideApplier: config.CLIOverrideApplier{},
-			Analyzer: analyzers.InventoryAnalyzer{
-				MilvusCollector: collectors.DefaultMilvusInventoryCollector{
-					Factory: platform.SDKMilvusClientFactory{},
-				},
-				K8sCollector: collectors.DefaultK8sInventoryCollector{
-					Factory: platform.ClientGoK8sClientFactory{},
-				},
+			MilvusCollector: collectormilvus.DefaultCollector{
+				Factory: platformmilvus.SDKClientFactory{},
 			},
+			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner: cli.DefaultValidateRunner{
 			Loader:         config.YAMLLoader{},

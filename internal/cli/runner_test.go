@@ -46,10 +46,31 @@ func (f fakeOverrideApplier) ApplyCheckOverrides(cfg *model.Config, opts model.C
 type fakeAnalyzer struct {
 	result *model.AnalysisResult
 	err    error
+	input  model.AnalyzeInput
 }
 
-func (f fakeAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput) (*model.AnalysisResult, error) {
+func (f *fakeAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput) (*model.AnalysisResult, error) {
+	f.input = input
 	return f.result, f.err
+}
+
+type fakeMilvusCollector struct {
+	clusterInfo  model.ClusterInfo
+	clusterErr   error
+	inventory    model.MilvusInventory
+	inventoryErr error
+}
+
+func (f fakeMilvusCollector) CollectClusterInfo(ctx context.Context, cfg *model.Config) (model.ClusterInfo, error) {
+	_ = ctx
+	_ = cfg
+	return f.clusterInfo, f.clusterErr
+}
+
+func (f fakeMilvusCollector) CollectInventory(ctx context.Context, cfg *model.Config) (model.MilvusInventory, error) {
+	_ = ctx
+	_ = cfg
+	return f.inventory, f.inventoryErr
 }
 
 func TestValidateRunner_Run_ReturnsNil_ForValidConfig(t *testing.T) {
@@ -81,7 +102,25 @@ func TestCheckRunner_Run_ReturnsStubAnalysisResult(t *testing.T) {
 		DefaultApplier:  fakeDefaultApplier{},
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
-		Analyzer:        fakeAnalyzer{result: expected},
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+			inventory: model.MilvusInventory{
+				ServerVersion:   "2.6.1",
+				DatabaseCount:   1,
+				CollectionCount: 1,
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book"}},
+				},
+			},
+		},
+		Analyzer: &fakeAnalyzer{result: expected},
 	}
 
 	got, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
@@ -102,7 +141,25 @@ func TestCheckRunner_FullStubPipeline_Works(t *testing.T) {
 		DefaultApplier:  fakeDefaultApplier{},
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
-		Analyzer: fakeAnalyzer{
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+			inventory: model.MilvusInventory{
+				ServerVersion:   "2.6.1",
+				DatabaseCount:   1,
+				CollectionCount: 1,
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book"}},
+				},
+			},
+		},
+		Analyzer: &fakeAnalyzer{
 			result: expected,
 		},
 	}
@@ -113,6 +170,82 @@ func TestCheckRunner_FullStubPipeline_Works(t *testing.T) {
 	}
 	if got != expected {
 		t.Fatalf("Run() got %#v, want %#v", got, expected)
+	}
+}
+
+func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
+	t.Parallel()
+
+	collector := fakeMilvusCollector{
+		clusterInfo: model.ClusterInfo{
+			Name:          "demo",
+			MilvusURI:     "127.0.0.1:19530",
+			Namespace:     "milvus",
+			MilvusVersion: "2.5.4",
+			ArchProfile:   model.ArchProfileV24,
+			MQType:        "unknown",
+		},
+		inventory: model.MilvusInventory{
+			ServerVersion:   "2.5.4",
+			DatabaseCount:   2,
+			CollectionCount: 3,
+			Databases: []model.DatabaseInventory{
+				{Name: "analytics", Collections: []string{"events"}},
+				{Name: "default", Collections: []string{"book", "movie"}},
+			},
+		},
+	}
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: collector,
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := analyzer.input
+	if got.Snapshot.Cluster.MilvusVersion != "2.5.4" {
+		t.Fatalf("Snapshot.Cluster = %#v", got.Snapshot.Cluster)
+	}
+	if got.Inventory.Milvus.CollectionCount != 3 {
+		t.Fatalf("Inventory = %#v", got.Inventory.Milvus)
+	}
+	if len(got.Checks) != 3 {
+		t.Fatalf("Checks = %#v, want 3 checks", got.Checks)
+	}
+}
+
+func TestCheckRunner_TransformsMilvusFailureIntoAnalyzeInput(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{clusterErr: errors.New("dial failed")},
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := analyzer.input
+	if len(got.Failures) != 1 {
+		t.Fatalf("Failures = %#v", got.Failures)
+	}
+	if got.Checks[0].Status != model.CheckStatusFail {
+		t.Fatalf("first check = %#v", got.Checks[0])
 	}
 }
 
