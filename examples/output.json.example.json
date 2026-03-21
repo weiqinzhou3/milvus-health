@@ -1,0 +1,37 @@
+{
+  "cluster": {
+    "name": "milvus-prod-sh",
+    "milvus_uri": "milvus.milvus.svc.cluster.local:19530",
+    "namespace": "milvus",
+    "milvus_version": "",
+    "arch_profile": "",
+    "mq_type": ""
+  },
+  "result": "WARN",
+  "standby": false,
+  "confidence": "low",
+  "exit_code": 1,
+  "elapsed_ms": 0,
+  "summary": {
+    "database_count": 0,
+    "collection_count": 0,
+    "pod_count": 0
+  },
+  "probes": {
+    "business_read": {
+      "status": "skip",
+      "configured_targets": 0,
+      "successful_targets": 0,
+      "min_success_targets": 0,
+      "message": "stub analyzer"
+    },
+    "rw": {
+      "status": "skip",
+      "enabled": true,
+      "message": "stub analyzer"
+    }
+  },
+  "warnings": [
+    "stub analysis only"
+  ]
+}

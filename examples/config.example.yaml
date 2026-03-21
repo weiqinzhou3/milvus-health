@@ -1,0 +1,32 @@
+cluster:
+  name: milvus-prod-sh
+  milvus:
+    uri: milvus.milvus.svc.cluster.local:19530
+    username: root
+    password: ""
+    token: ""
+
+k8s:
+  namespace: milvus
+  kubeconfig: /home/admin/.kube/config
+
+probe:
+  read:
+    min_success_targets: 1
+    targets:
+      - database: default
+        collection: book
+        query_expr: "id >= 0"
+        output_fields:
+          - id
+          - title
+  rw:
+    enabled: true
+    test_database_prefix: milvus_health_test
+    cleanup: true
+    insert_rows: 100
+    vector_dim: 128
+
+output:
+  format: text
+  detail: false
