@@ -1,8 +1,12 @@
 Cluster: milvus-prod-sh
+Milvus URI: 127.0.0.1:19530
+Namespace: milvus
+Milvus Version: unknown
+Arch Profile: unknown
+MQ Type: unknown
 Overall Result: FAIL
 Standby: false
 Confidence: low
 Exit Code: 2
 Summary: databases=0 collections=0 pods=0
-Warnings: K8s inventory unavailable: create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory
 Failures: create milvus client: context deadline exceeded

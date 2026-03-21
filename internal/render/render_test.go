@@ -11,7 +11,7 @@ import (
 
 func sampleResult() *model.AnalysisResult {
 	return &model.AnalysisResult{
-		Cluster: model.ClusterOutputView{
+		Cluster: model.ClusterInfo{
 			Name:          "demo-cluster",
 			MilvusURI:     "localhost:19530",
 			Namespace:     "milvus",
@@ -34,10 +34,13 @@ func sampleResult() *model.AnalysisResult {
 		},
 		Inventory: &model.ClusterInventory{
 			Milvus: model.MilvusInventory{
-				Reachable:     true,
-				ServerVersion: "2.6.1",
-				Databases:     []string{"default"},
-				Collections:   []model.CollectionInventory{{Database: "default", Name: "book"}},
+				Reachable:       true,
+				ServerVersion:   "2.6.1",
+				DatabaseCount:   1,
+				CollectionCount: 1,
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book"}},
+				},
 			},
 			K8s: model.K8sInventory{
 				Namespace: "milvus",
@@ -112,7 +115,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Overall Result", "Standby", "Confidence", "Exit Code"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -164,6 +167,9 @@ func TestJSONRenderer_DetailFalse_StableShape(t *testing.T) {
 		if _, ok := decoded[field]; !ok {
 			t.Fatalf("missing field %q in output %s", field, out)
 		}
+	}
+	if _, ok := decoded["inventory"]; !ok {
+		t.Fatalf("detail=false should keep inventory, got %s", out)
 	}
 	if _, ok := decoded["checks"]; ok {
 		t.Fatalf("detail=false should omit checks, got %s", out)

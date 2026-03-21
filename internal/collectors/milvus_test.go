@@ -48,8 +48,11 @@ func TestMilvusInventoryCollector_ReturnsInventory_FromFakeClient(t *testing.T) 
 	if !inventory.Reachable || inventory.ServerVersion != "2.6.1" {
 		t.Fatalf("Collect() inventory = %#v", inventory)
 	}
-	if len(inventory.Collections) != 1 || inventory.Collections[0].Name != "book" {
-		t.Fatalf("Collect() collections = %#v", inventory.Collections)
+	if inventory.DatabaseCount != 1 || inventory.CollectionCount != 1 {
+		t.Fatalf("Collect() inventory counts = %#v", inventory)
+	}
+	if len(inventory.Databases) != 1 || inventory.Databases[0].Collections[0] != "book" {
+		t.Fatalf("Collect() databases = %#v", inventory.Databases)
 	}
 }
 
@@ -96,7 +99,7 @@ func TestMilvusInventoryCollector_HandlesCapabilityDegrade(t *testing.T) {
 	if !inventory.CapabilityDegraded {
 		t.Fatalf("CapabilityDegraded = false, want true")
 	}
-	if len(inventory.Databases) != 1 || inventory.Databases[0] != "default" {
-		t.Fatalf("Databases = %#v", inventory.Databases)
+	if len(inventory.DatabaseNames) != 1 || inventory.DatabaseNames[0] != "default" {
+		t.Fatalf("DatabaseNames = %#v", inventory.DatabaseNames)
 	}
 }

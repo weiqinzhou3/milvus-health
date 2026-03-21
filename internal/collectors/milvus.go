@@ -45,11 +45,12 @@ func (c DefaultMilvusInventoryCollector) Collect(ctx context.Context, cfg *model
 	databases, err := client.ListDatabases(ctx)
 	switch {
 	case err == nil:
-		inventory.Databases = databases
+		inventory.DatabaseNames = append([]string(nil), databases...)
 	case errors.Is(err, platform.ErrCapabilityUnavailable):
 		inventory.CapabilityDegraded = true
 		inventory.DegradedCapabilities = append(inventory.DegradedCapabilities, "list_databases")
 		databases = []string{"default"}
+		inventory.DatabaseNames = append([]string(nil), databases...)
 	default:
 		return model.MilvusInventory{}, &model.AppError{Code: model.ErrCodeMilvusCollect, Message: fmt.Sprintf("list databases: %v", err), Cause: err}
 	}
@@ -63,10 +64,12 @@ func (c DefaultMilvusInventoryCollector) Collect(ctx context.Context, cfg *model
 		if err != nil {
 			return model.MilvusInventory{}, &model.AppError{Code: model.ErrCodeMilvusCollect, Message: fmt.Sprintf("list collections for database %q: %v", database, err), Cause: err}
 		}
-		if !contains(inventory.Databases, database) {
-			inventory.Databases = append(inventory.Databases, database)
+		if !contains(inventory.DatabaseNames, database) {
+			inventory.DatabaseNames = append(inventory.DatabaseNames, database)
 		}
+		databaseInventory := model.DatabaseInventory{Name: database}
 		for _, collection := range collections {
+			databaseInventory.Collections = append(databaseInventory.Collections, collection.Name)
 			inventory.Collections = append(inventory.Collections, model.CollectionInventory{
 				Database:   collection.Database,
 				Name:       collection.Name,
@@ -74,7 +77,10 @@ func (c DefaultMilvusInventoryCollector) Collect(ctx context.Context, cfg *model
 				FieldCount: collection.FieldCount,
 			})
 		}
+		inventory.Databases = append(inventory.Databases, databaseInventory)
 	}
+	inventory.DatabaseCount = len(inventory.Databases)
+	inventory.CollectionCount = len(inventory.Collections)
 
 	return inventory, nil
 }

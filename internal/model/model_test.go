@@ -14,11 +14,12 @@ func TestDetectArchProfile(t *testing.T) {
 		version string
 		want    model.MilvusArchProfile
 	}{
-		{name: "2.4.7 -> v24", version: "2.4.7", want: model.ArchProfileV24},
-		{name: "2.5.3 -> v24", version: "2.5.3", want: model.ArchProfileV24},
-		{name: "2.6.0 -> v26", version: "2.6.0", want: model.ArchProfileV26},
-		{name: "2.6.12 -> v26", version: "2.6.12", want: model.ArchProfileV26},
-		{name: "2.7.1 -> v26", version: "2.7.1", want: model.ArchProfileV26},
+		{name: "2.4.7 -> v2.4", version: "2.4.7", want: model.ArchProfileV24},
+		{name: "2.5.3 -> v2.4", version: "2.5.3", want: model.ArchProfileV24},
+		{name: "2.6.0 -> v2.6", version: "2.6.0", want: model.ArchProfileV26},
+		{name: "2.6.12 -> v2.6", version: "2.6.12", want: model.ArchProfileV26},
+		{name: "2.7.1 -> v2.6", version: "2.7.1", want: model.ArchProfileV26},
+		{name: "3.0.0 -> v2.6", version: "3.0.0", want: model.ArchProfileV26},
 		{name: "2.3.9 -> unknown", version: "2.3.9", want: model.ArchProfileUnknown},
 		{name: "empty -> unknown", version: "", want: model.ArchProfileUnknown},
 		{name: "invalid -> unknown", version: "bad.version", want: model.ArchProfileUnknown},

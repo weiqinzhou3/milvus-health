@@ -7,9 +7,9 @@ import (
 
 	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
-	"github.com/weiqinzhou3/milvus-health/internal/collectors"
+	collectormilvus "github.com/weiqinzhou3/milvus-health/internal/collectors/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/config"
-	"github.com/weiqinzhou3/milvus-health/internal/platform"
+	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
@@ -20,28 +20,18 @@ func fakeRealDependencies() dependencies {
 			Validator:       config.ConfigValidator{},
 			DefaultApplier:  config.DefaultValueApplier{},
 			OverrideApplier: config.CLIOverrideApplier{},
-			Analyzer: analyzers.InventoryAnalyzer{
-				MilvusCollector: collectors.DefaultMilvusInventoryCollector{
-					Factory: platform.FakeMilvusClientFactory{
-						Client: &platform.FakeMilvusClient{
-							Version:   "2.6.1",
-							Databases: []string{"default"},
-							Collections: map[string][]platform.MilvusCollection{
-								"default": {{Database: "default", Name: "book", ShardNum: 2, FieldCount: 3}},
-							},
-						},
-					},
-				},
-				K8sCollector: collectors.DefaultK8sInventoryCollector{
-					Factory: platform.FakeK8sClientFactory{
-						Client: &platform.FakeK8sClient{
-							Pods:      []platform.PodInfo{{Name: "milvus-0", Phase: "Running", Ready: true}},
-							Services:  []platform.ServiceInfo{{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}}},
-							Endpoints: []platform.EndpointInfo{{Name: "milvus", Addresses: []string{"10.0.0.1"}}},
+			MilvusCollector: collectormilvus.DefaultCollector{
+				Factory: platformmilvus.FakeClientFactory{
+					Client: &platformmilvus.FakeClient{
+						Version:   "2.6.1",
+						Databases: []string{"default"},
+						Collections: map[string][]string{
+							"default": {"book"},
 						},
 					},
 				},
 			},
+			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner:  cli.DefaultValidateRunner{Loader: config.YAMLLoader{}, Validator: config.ConfigValidator{}, DefaultApplier: config.DefaultValueApplier{}},
 		rendererFactory: render.DefaultRendererFactory{},
@@ -60,7 +50,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Overall Result: PASS", "Summary: databases=1 collections=1 pods=1"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 pods=0", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}
