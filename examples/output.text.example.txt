@@ -1,5 +1,8 @@
 Cluster: milvus-prod-sh
-Overall Result: WARN
+Overall Result: FAIL
 Standby: false
 Confidence: low
-Exit Code: 1
+Exit Code: 2
+Summary: databases=0 collections=0 pods=0
+Warnings: K8s inventory unavailable: create k8s client: stat /tmp/milvus-health-missing-kubeconfig: no such file or directory
+Failures: create milvus client: context deadline exceeded

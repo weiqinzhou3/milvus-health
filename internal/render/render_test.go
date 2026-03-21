@@ -32,6 +32,20 @@ func sampleResult() *model.AnalysisResult {
 			BusinessRead: model.BusinessReadProbeResult{Status: model.CheckStatusPass, Message: "ok"},
 			RW:           model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "stub"},
 		},
+		Inventory: &model.ClusterInventory{
+			Milvus: model.MilvusInventory{
+				Reachable:     true,
+				ServerVersion: "2.6.1",
+				Databases:     []string{"default"},
+				Collections:   []model.CollectionInventory{{Database: "default", Name: "book"}},
+			},
+			K8s: model.K8sInventory{
+				Namespace: "milvus",
+				Pods:      []model.PodStatusSummary{{Name: "milvus-0", Phase: "Running", Ready: true}},
+				Services:  []model.ServiceInventory{{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}}},
+				Endpoints: []model.EndpointInventory{{Name: "milvus", Addresses: []string{"10.0.0.1"}}},
+			},
+		},
 		Checks: []model.CheckResult{
 			{Name: "stub-check", Status: model.CheckStatusWarn, Message: "stub", Recommendation: "inspect fake pipeline", Evidence: []string{"warn evidence"}},
 		},
@@ -99,6 +113,9 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 	}
 	text := string(out)
 	for _, token := range []string{"Cluster", "Overall Result", "Standby", "Confidence", "Exit Code"} {
+		if !strings.Contains(text, "Summary:") {
+			t.Fatalf("text output missing summary: %s", text)
+		}
 		if !strings.Contains(text, token) {
 			t.Fatalf("text output missing %q: %s", token, text)
 		}
@@ -126,6 +143,9 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "stub-check") {
 		t.Fatalf("detail=true should include check details: %s", out)
+	}
+	if !strings.Contains(string(out), "Inventory:") {
+		t.Fatalf("detail=true should include inventory summary: %s", out)
 	}
 }
 

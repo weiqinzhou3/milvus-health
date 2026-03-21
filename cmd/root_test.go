@@ -153,8 +153,8 @@ func TestCheck_JSON_WritesOnlyJSONToStdout(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	exitCode := ExecuteArgs([]string{"check", "--config", filepath.Join("..", "examples", "config.example.yaml"), "--format", "json"}, &stdout, &stderr)
-	if exitCode != 1 {
-		t.Fatalf("ExecuteArgs() = %d, want 1", exitCode)
+	if exitCode != 2 {
+		t.Fatalf("ExecuteArgs() = %d, want 2", exitCode)
 	}
 	out := strings.TrimSpace(stdout.String())
 	if !strings.HasPrefix(out, "{") || !strings.HasSuffix(out, "}") {

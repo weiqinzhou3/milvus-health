@@ -10,8 +10,10 @@ import (
 
 	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
+	"github.com/weiqinzhou3/milvus-health/internal/collectors"
 	"github.com/weiqinzhou3/milvus-health/internal/config"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/platform"
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
@@ -35,23 +37,7 @@ type app struct {
 }
 
 func NewRootCmd(stdout, stderr io.Writer) *cobra.Command {
-	defaultDeps := dependencies{
-		checkRunner: cli.DefaultCheckRunner{
-			Loader:          config.YAMLLoader{},
-			Validator:       config.ConfigValidator{},
-			DefaultApplier:  config.DefaultValueApplier{},
-			OverrideApplier: config.CLIOverrideApplier{},
-			Analyzer:        analyzers.FakeAnalyzer{},
-		},
-		validateRunner: cli.DefaultValidateRunner{
-			Loader:         config.YAMLLoader{},
-			Validator:      config.ConfigValidator{},
-			DefaultApplier: config.DefaultValueApplier{},
-		},
-		rendererFactory: render.DefaultRendererFactory{},
-		exitMapper:      cli.DefaultExitCodeMapper{},
-	}
-	return newApp(stdout, stderr, defaultDeps).root
+	return newApp(stdout, stderr, defaultDependencies()).root
 }
 
 func newApp(stdout, stderr io.Writer, deps dependencies) *app {
@@ -111,7 +97,7 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 	var opts model.CheckOptions
 	command := &cobra.Command{
 		Use:   "check",
-		Short: "Run stub health check",
+		Short: "Run read-only health check",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.ConfigPath == "" {
 				return &model.AppError{Code: model.ErrCodeConfigInvalid, Message: "--config is required"}
@@ -167,13 +153,24 @@ func Execute() int {
 }
 
 func ExecuteArgs(args []string, stdout, stderr io.Writer) int {
-	defaultDeps := dependencies{
+	return newApp(stdout, stderr, defaultDependencies()).Execute(args)
+}
+
+func defaultDependencies() dependencies {
+	return dependencies{
 		checkRunner: cli.DefaultCheckRunner{
 			Loader:          config.YAMLLoader{},
 			Validator:       config.ConfigValidator{},
 			DefaultApplier:  config.DefaultValueApplier{},
 			OverrideApplier: config.CLIOverrideApplier{},
-			Analyzer:        analyzers.FakeAnalyzer{},
+			Analyzer: analyzers.InventoryAnalyzer{
+				MilvusCollector: collectors.DefaultMilvusInventoryCollector{
+					Factory: platform.SDKMilvusClientFactory{},
+				},
+				K8sCollector: collectors.DefaultK8sInventoryCollector{
+					Factory: platform.ClientGoK8sClientFactory{},
+				},
+			},
 		},
 		validateRunner: cli.DefaultValidateRunner{
 			Loader:         config.YAMLLoader{},
@@ -183,7 +180,6 @@ func ExecuteArgs(args []string, stdout, stderr io.Writer) int {
 		rendererFactory: render.DefaultRendererFactory{},
 		exitMapper:      cli.DefaultExitCodeMapper{},
 	}
-	return newApp(stdout, stderr, defaultDeps).Execute(args)
 }
 
 func (a *app) Execute(args []string) int {

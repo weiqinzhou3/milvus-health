@@ -1,16 +1,16 @@
 {
   "cluster": {
     "name": "milvus-prod-sh",
-    "milvus_uri": "milvus.milvus.svc.cluster.local:19530",
+    "milvus_uri": "127.0.0.1:19530",
     "namespace": "milvus",
     "milvus_version": "",
     "arch_profile": "",
     "mq_type": ""
   },
-  "result": "WARN",
+  "result": "FAIL",
   "standby": false,
   "confidence": "low",
-  "exit_code": 1,
+  "exit_code": 2,
   "elapsed_ms": 0,
   "summary": {
     "database_count": 0,
@@ -23,15 +23,18 @@
       "configured_targets": 0,
       "successful_targets": 0,
       "min_success_targets": 0,
-      "message": "stub analyzer"
+      "message": "not enabled in this iteration"
     },
     "rw": {
       "status": "skip",
       "enabled": true,
-      "message": "stub analyzer"
+      "message": "rw probe not enabled in this iteration"
     }
   },
   "warnings": [
-    "stub analysis only"
+    "K8s inventory unavailable: create k8s client: stat /tmp/milvus-health-missing-kubeconfig: no such file or directory"
+  ],
+  "failures": [
+    "create milvus client: context deadline exceeded"
   ]
 }

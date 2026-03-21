@@ -28,8 +28,8 @@ func TestCLICommandsSmoke(t *testing.T) {
 		{name: "check help", args: []string{"check", "--help"}, exitCode: 0},
 		{name: "validate help", args: []string{"validate", "--help"}, exitCode: 0},
 		{name: "validate example config", args: []string{"validate", "--config", filepath.Join("examples", "config.example.yaml")}, exitCode: 0},
-		{name: "check text", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "text"}, exitCode: 1},
-		{name: "check json", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "json"}, exitCode: 1},
+		{name: "check text", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "text"}, exitCode: 2},
+		{name: "check json", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "json"}, exitCode: 2},
 	}
 
 	for _, tt := range tests {
@@ -72,8 +72,8 @@ func TestExamplesMatchCurrentOutputs(t *testing.T) {
 	textCmd := exec.Command(bin, "check", "--config", configPath, "--format", "text")
 	textCmd.Dir = filepath.Join("..")
 	textOut, err := textCmd.CombinedOutput()
-	if got := exitCodeOf(err); got != 1 {
-		t.Fatalf("text check exit=%d want=1\n%s", got, textOut)
+	if got := exitCodeOf(err); got != 2 {
+		t.Fatalf("text check exit=%d want=2\n%s", got, textOut)
 	}
 	wantText, err := os.ReadFile(filepath.Join("..", "examples", "output.text.example.txt"))
 	if err != nil {
@@ -86,8 +86,8 @@ func TestExamplesMatchCurrentOutputs(t *testing.T) {
 	jsonCmd := exec.Command(bin, "check", "--config", configPath, "--format", "json")
 	jsonCmd.Dir = filepath.Join("..")
 	jsonOut, err := jsonCmd.CombinedOutput()
-	if got := exitCodeOf(err); got != 1 {
-		t.Fatalf("json check exit=%d want=1\n%s", got, jsonOut)
+	if got := exitCodeOf(err); got != 2 {
+		t.Fatalf("json check exit=%d want=2\n%s", got, jsonOut)
 	}
 	wantJSON, err := os.ReadFile(filepath.Join("..", "examples", "output.json.example.json"))
 	if err != nil {

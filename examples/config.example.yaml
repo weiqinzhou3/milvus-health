@@ -1,14 +1,14 @@
 cluster:
   name: milvus-prod-sh
   milvus:
-    uri: milvus.milvus.svc.cluster.local:19530
+    uri: 127.0.0.1:19530
     username: root
     password: ""
     token: ""
 
 k8s:
   namespace: milvus
-  kubeconfig: /home/admin/.kube/config
+  kubeconfig: /tmp/milvus-health-missing-kubeconfig
 
 probe:
   read:
@@ -30,3 +30,5 @@ probe:
 output:
   format: text
   detail: false
+
+timeout_sec: 1

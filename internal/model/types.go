@@ -192,6 +192,52 @@ type AnalysisSummary struct {
 	PodCount        int `json:"pod_count"`
 }
 
+type ClusterInventory struct {
+	Milvus MilvusInventory `json:"milvus,omitempty"`
+	K8s    K8sInventory    `json:"k8s,omitempty"`
+}
+
+type MilvusInventory struct {
+	Reachable            bool                  `json:"reachable"`
+	ServerVersion        string                `json:"server_version,omitempty"`
+	Databases            []string              `json:"databases,omitempty"`
+	Collections          []CollectionInventory `json:"collections,omitempty"`
+	CapabilityDegraded   bool                  `json:"capability_degraded,omitempty"`
+	DegradedCapabilities []string              `json:"degraded_capabilities,omitempty"`
+}
+
+type CollectionInventory struct {
+	Database   string `json:"database"`
+	Name       string `json:"name"`
+	ShardNum   int32  `json:"shard_num,omitempty"`
+	FieldCount int    `json:"field_count,omitempty"`
+}
+
+type K8sInventory struct {
+	Namespace string              `json:"namespace,omitempty"`
+	Pods      []PodStatusSummary  `json:"pods,omitempty"`
+	Services  []ServiceInventory  `json:"services,omitempty"`
+	Endpoints []EndpointInventory `json:"endpoints,omitempty"`
+}
+
+type PodStatusSummary struct {
+	Name         string `json:"name"`
+	Phase        string `json:"phase"`
+	Ready        bool   `json:"ready"`
+	RestartCount int32  `json:"restart_count"`
+}
+
+type ServiceInventory struct {
+	Name  string   `json:"name"`
+	Type  string   `json:"type"`
+	Ports []string `json:"ports,omitempty"`
+}
+
+type EndpointInventory struct {
+	Name      string   `json:"name"`
+	Addresses []string `json:"addresses,omitempty"`
+}
+
 type BusinessReadProbeResult struct {
 	Status            CheckStatus `json:"status"`
 	ConfiguredTargets int         `json:"configured_targets"`
@@ -231,6 +277,7 @@ type AnalysisResult struct {
 	ElapsedMS  int64             `json:"elapsed_ms"`
 	Summary    AnalysisSummary   `json:"summary"`
 	Probes     ProbeOutputView   `json:"probes"`
+	Inventory  *ClusterInventory `json:"inventory,omitempty"`
 	Warnings   []string          `json:"warnings,omitempty"`
 	Failures   []string          `json:"failures,omitempty"`
 	Checks     []CheckResult     `json:"checks,omitempty"`
@@ -240,6 +287,7 @@ type MetadataSnapshot struct{}
 
 type AnalyzeInput struct {
 	Config    *Config
+	Inventory ClusterInventory
 	Snapshot  MetadataSnapshot
 	Checks    []CheckResult
 	StartedAt time.Time

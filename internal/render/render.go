@@ -32,6 +32,21 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	fmt.Fprintf(&b, "Standby: %t\n", result.Standby)
 	fmt.Fprintf(&b, "Confidence: %s\n", result.Confidence)
 	fmt.Fprintf(&b, "Exit Code: %d\n", result.ExitCode)
+	fmt.Fprintf(&b, "Summary: databases=%d collections=%d pods=%d\n", result.Summary.DatabaseCount, result.Summary.CollectionCount, result.Summary.PodCount)
+	if len(result.Warnings) > 0 {
+		fmt.Fprintf(&b, "Warnings: %s\n", strings.Join(result.Warnings, "; "))
+	}
+	if len(result.Failures) > 0 {
+		fmt.Fprintf(&b, "Failures: %s\n", strings.Join(result.Failures, "; "))
+	}
+	if opts.Detail && result.Inventory != nil {
+		if result.Inventory.Milvus.ServerVersion != "" || len(result.Inventory.Milvus.Databases) > 0 || len(result.Inventory.Milvus.Collections) > 0 {
+			fmt.Fprintf(&b, "Inventory: milvus_version=%s databases=%d collections=%d\n", result.Inventory.Milvus.ServerVersion, len(result.Inventory.Milvus.Databases), len(result.Inventory.Milvus.Collections))
+		}
+		if result.Inventory.K8s.Namespace != "" || len(result.Inventory.K8s.Pods) > 0 {
+			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d services=%d endpoints=%d\n", result.Inventory.K8s.Namespace, len(result.Inventory.K8s.Pods), len(result.Inventory.K8s.Services), len(result.Inventory.K8s.Endpoints))
+		}
+	}
 	if opts.Detail && len(result.Checks) > 0 {
 		b.WriteString("Checks:\n")
 		for _, check := range result.Checks {
@@ -53,6 +68,7 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	payload := *result
 	if !opts.Detail {
 		payload.Checks = nil
+		payload.Inventory = nil
 	}
 	return json.MarshalIndent(payload, "", "  ")
 }
