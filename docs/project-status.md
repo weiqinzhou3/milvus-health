@@ -52,10 +52,10 @@ Suggested stage sequence:
 | Default values / CLI overrides | Implemented | Basic defaulting and override path exists |
 | Output rendering | Partially implemented | `text` / `json` renderers exist, but only for minimal skeleton output |
 | Exit-code mapping | Implemented | Pass/Warn/Fail/error mapping path exists |
-| Analyzer | Partially implemented | `InventoryAnalyzer` is wired on `main`, but overall health judgement is still incomplete and skeleton-stage |
-| Milvus platform client | Partially implemented | SDK wiring is visible on `main`, but it should not yet be treated as production-validated capability |
-| Kubernetes platform client | Partially implemented | `client-go` wiring is visible on `main`, but it should not yet be treated as production-validated capability |
-| Collectors | Partially implemented | Basic inventory collection paths exist, but the project still lacks full real-environment delivery confidence |
+| Analyzer | Skeleton-only | Analyzer-related code exists in the repository, but `main` should not yet be described as reviewably implemented for real capability |
+| Milvus platform client | Placeholder only | Not yet sufficient on `main` to claim real Milvus capability |
+| Kubernetes platform client | Placeholder only | Not yet sufficient on `main` to claim real Kubernetes capability |
+| Collectors | Placeholder only | Collector-related code may exist, but `main` should not yet be described as having reviewably implemented real collection capability |
 | Probes | Placeholder only | Business Read / RW probe real logic is not yet visible on `main` |
 | Tests | Partially implemented | Smoke tests exist; repository also claims first batch of unit tests, but current `main` is still contract/skeleton-oriented |
 | Examples | Implemented | Example config and example outputs exist |
@@ -212,7 +212,7 @@ The repository does not yet visibly support these real outputs on `main`:
 The following review findings should be treated as current technical debt until fixed in code and reflected in `main`:
 
 1. The repository `README.md` still states that the project is in skeleton stage. That conclusion should not yet be relaxed.
-2. Although `main` now contains inventory collector and platform wiring, the branch still lacks enough real-environment validation to claim operator-grade health truth.
+2. Even if collector- or platform-related code is visible in the repository, the current `main` branch still does not provide enough stable, reviewable evidence to claim real capability or operator-grade health truth.
 3. Spec/interface design have already moved forward conceptually, but `main` has not yet caught up with those targets.
 4. Any work completed by Codex or Claude Code but not pushed to GitHub is effectively invisible to review and should be treated as not done.
 
