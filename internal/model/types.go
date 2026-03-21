@@ -156,8 +156,34 @@ type ProbeConfig struct {
 }
 
 type ReadProbeConfig struct {
-	MinSuccessTargets int               `yaml:"min_success_targets"`
-	Targets           []ReadProbeTarget `yaml:"targets"`
+	MinSuccessTargets    int               `yaml:"min_success_targets"`
+	Targets              []ReadProbeTarget `yaml:"targets"`
+	minSuccessTargetsSet bool              `yaml:"-"`
+}
+
+func (c *ReadProbeConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	type rawReadProbeConfig struct {
+		MinSuccessTargets *int              `yaml:"min_success_targets"`
+		Targets           []ReadProbeTarget `yaml:"targets"`
+	}
+
+	var raw rawReadProbeConfig
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	c.Targets = raw.Targets
+	c.minSuccessTargetsSet = raw.MinSuccessTargets != nil
+	if raw.MinSuccessTargets != nil {
+		c.MinSuccessTargets = *raw.MinSuccessTargets
+	} else {
+		c.MinSuccessTargets = 0
+	}
+	return nil
+}
+
+func (c ReadProbeConfig) HasExplicitMinSuccessTargets() bool {
+	return c.minSuccessTargetsSet
 }
 
 type ReadProbeTarget struct {

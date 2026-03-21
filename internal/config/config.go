@@ -126,7 +126,7 @@ func (DefaultValueApplier) Apply(cfg *model.Config) {
 	if cfg.Output.Format == "" {
 		cfg.Output.Format = model.OutputFormatText
 	}
-	if cfg.Probe.Read.MinSuccessTargets == 0 {
+	if cfg.Probe.Read.MinSuccessTargets == 0 && !cfg.Probe.Read.HasExplicitMinSuccessTargets() {
 		cfg.Probe.Read.MinSuccessTargets = 1
 	}
 	if cfg.Probe.RW.TestDatabasePrefix == "" {
