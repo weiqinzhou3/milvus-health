@@ -20,15 +20,16 @@ func TestCLICommandsSmoke(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		args []string
+		name     string
+		args     []string
+		exitCode int
 	}{
-		{name: "version", args: []string{"version"}},
-		{name: "check help", args: []string{"check", "--help"}},
-		{name: "validate help", args: []string{"validate", "--help"}},
-		{name: "validate example config", args: []string{"validate", "--config", filepath.Join("examples", "config.example.yaml")}},
-		{name: "check text", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "text"}},
-		{name: "check json", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "json"}},
+		{name: "version", args: []string{"version"}, exitCode: 0},
+		{name: "check help", args: []string{"check", "--help"}, exitCode: 0},
+		{name: "validate help", args: []string{"validate", "--help"}, exitCode: 0},
+		{name: "validate example config", args: []string{"validate", "--config", filepath.Join("examples", "config.example.yaml")}, exitCode: 0},
+		{name: "check text", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "text"}, exitCode: 1},
+		{name: "check json", args: []string{"check", "--config", filepath.Join("examples", "config.example.yaml"), "--format", "json"}, exitCode: 1},
 	}
 
 	for _, tt := range tests {
@@ -41,8 +42,9 @@ func TestCLICommandsSmoke(t *testing.T) {
 			var stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
-				t.Fatalf("run %v error: %v\nstdout=%s\nstderr=%s", tt.args, err, stdout.String(), stderr.String())
+			err := cmd.Run()
+			if got := exitCodeOf(err); got != tt.exitCode {
+				t.Fatalf("run %v exit=%d want=%d\nstdout=%s\nstderr=%s", tt.args, got, tt.exitCode, stdout.String(), stderr.String())
 			}
 			if strings.Contains(strings.Join(tt.args, " "), "--format json") && !jsonLike(stdout.String()) {
 				t.Fatalf("json check output is not json: %s", stdout.String())
@@ -70,8 +72,8 @@ func TestExamplesMatchCurrentOutputs(t *testing.T) {
 	textCmd := exec.Command(bin, "check", "--config", configPath, "--format", "text")
 	textCmd.Dir = filepath.Join("..")
 	textOut, err := textCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("text check error: %v\n%s", err, textOut)
+	if got := exitCodeOf(err); got != 1 {
+		t.Fatalf("text check exit=%d want=1\n%s", got, textOut)
 	}
 	wantText, err := os.ReadFile(filepath.Join("..", "examples", "output.text.example.txt"))
 	if err != nil {
@@ -84,8 +86,8 @@ func TestExamplesMatchCurrentOutputs(t *testing.T) {
 	jsonCmd := exec.Command(bin, "check", "--config", configPath, "--format", "json")
 	jsonCmd.Dir = filepath.Join("..")
 	jsonOut, err := jsonCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("json check error: %v\n%s", err, jsonOut)
+	if got := exitCodeOf(err); got != 1 {
+		t.Fatalf("json check exit=%d want=1\n%s", got, jsonOut)
 	}
 	wantJSON, err := os.ReadFile(filepath.Join("..", "examples", "output.json.example.json"))
 	if err != nil {
@@ -99,4 +101,14 @@ func TestExamplesMatchCurrentOutputs(t *testing.T) {
 func jsonLike(s string) bool {
 	s = strings.TrimSpace(s)
 	return strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")
+}
+
+func exitCodeOf(err error) int {
+	if err == nil {
+		return 0
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return exitErr.ExitCode()
+	}
+	return -1
 }

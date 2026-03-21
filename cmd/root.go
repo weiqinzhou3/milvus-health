@@ -17,22 +17,45 @@ import (
 
 const Version = "0.1.0-skeleton"
 
-func NewRootCmd(stdout, stderr io.Writer) *cobra.Command {
-	exitMapper := cli.DefaultExitCodeMapper{}
-	rendererFactory := render.DefaultRendererFactory{}
-	checkRunner := cli.DefaultCheckRunner{
-		Loader:          config.YAMLLoader{},
-		Validator:       config.ConfigValidator{},
-		DefaultApplier:  config.DefaultValueApplier{},
-		OverrideApplier: config.CLIOverrideApplier{},
-		Analyzer:        analyzers.FakeAnalyzer{},
-	}
-	validateRunner := cli.DefaultValidateRunner{
-		Loader:         config.YAMLLoader{},
-		Validator:      config.ConfigValidator{},
-		DefaultApplier: config.DefaultValueApplier{},
-	}
+type dependencies struct {
+	checkRunner     cli.CheckRunner
+	validateRunner  cli.ValidateRunner
+	rendererFactory render.RendererFactory
+	exitMapper      cli.ExitCodeMapper
+}
 
+type executionState struct {
+	exitCode int
+}
+
+type app struct {
+	root       *cobra.Command
+	state      *executionState
+	exitMapper cli.ExitCodeMapper
+}
+
+func NewRootCmd(stdout, stderr io.Writer) *cobra.Command {
+	defaultDeps := dependencies{
+		checkRunner: cli.DefaultCheckRunner{
+			Loader:          config.YAMLLoader{},
+			Validator:       config.ConfigValidator{},
+			DefaultApplier:  config.DefaultValueApplier{},
+			OverrideApplier: config.CLIOverrideApplier{},
+			Analyzer:        analyzers.FakeAnalyzer{},
+		},
+		validateRunner: cli.DefaultValidateRunner{
+			Loader:         config.YAMLLoader{},
+			Validator:      config.ConfigValidator{},
+			DefaultApplier: config.DefaultValueApplier{},
+		},
+		rendererFactory: render.DefaultRendererFactory{},
+		exitMapper:      cli.DefaultExitCodeMapper{},
+	}
+	return newApp(stdout, stderr, defaultDeps).root
+}
+
+func newApp(stdout, stderr io.Writer, deps dependencies) *app {
+	state := &executionState{}
 	root := &cobra.Command{
 		Use:           "milvus-health",
 		SilenceUsage:  true,
@@ -41,9 +64,13 @@ func NewRootCmd(stdout, stderr io.Writer) *cobra.Command {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.AddCommand(newVersionCmd(stdout))
-	root.AddCommand(newValidateCmd(stdout, stderr, validateRunner))
-	root.AddCommand(newCheckCmd(stdout, stderr, checkRunner, rendererFactory, exitMapper))
-	return root
+	root.AddCommand(newValidateCmd(stdout, stderr, deps.validateRunner))
+	root.AddCommand(newCheckCmd(stdout, stderr, deps.checkRunner, deps.rendererFactory, deps.exitMapper, state))
+	return &app{
+		root:       root,
+		state:      state,
+		exitMapper: deps.exitMapper,
+	}
 }
 
 func newVersionCmd(stdout io.Writer) *cobra.Command {
@@ -79,7 +106,7 @@ func newValidateCmd(stdout, stderr io.Writer, runner cli.ValidateRunner) *cobra.
 	return command
 }
 
-func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory render.RendererFactory, exitMapper cli.ExitCodeMapper) *cobra.Command {
+func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory render.RendererFactory, exitMapper cli.ExitCodeMapper, state *executionState) *cobra.Command {
 	_ = stderr
 	var opts model.CheckOptions
 	command := &cobra.Command{
@@ -106,6 +133,7 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 			if err != nil {
 				return &model.AppError{Code: model.ErrCodeRender, Cause: err}
 			}
+			state.exitCode = result.ExitCode
 			if _, err := stdout.Write(out); err != nil {
 				return err
 			}
@@ -139,14 +167,32 @@ func Execute() int {
 }
 
 func ExecuteArgs(args []string, stdout, stderr io.Writer) int {
-	root := NewRootCmd(stdout, stderr)
-	root.SetArgs(args)
-	root.SetOut(stdout)
-	root.SetErr(stderr)
-	if err := root.Execute(); err != nil {
-		mapper := cli.DefaultExitCodeMapper{}
-		_, _ = fmt.Fprintln(root.ErrOrStderr(), err.Error())
-		return mapper.FromError(err)
+	defaultDeps := dependencies{
+		checkRunner: cli.DefaultCheckRunner{
+			Loader:          config.YAMLLoader{},
+			Validator:       config.ConfigValidator{},
+			DefaultApplier:  config.DefaultValueApplier{},
+			OverrideApplier: config.CLIOverrideApplier{},
+			Analyzer:        analyzers.FakeAnalyzer{},
+		},
+		validateRunner: cli.DefaultValidateRunner{
+			Loader:         config.YAMLLoader{},
+			Validator:      config.ConfigValidator{},
+			DefaultApplier: config.DefaultValueApplier{},
+		},
+		rendererFactory: render.DefaultRendererFactory{},
+		exitMapper:      cli.DefaultExitCodeMapper{},
 	}
-	return 0
+	return newApp(stdout, stderr, defaultDeps).Execute(args)
+}
+
+func (a *app) Execute(args []string) int {
+	a.root.SetArgs(args)
+	a.root.SetOut(a.root.OutOrStdout())
+	a.root.SetErr(a.root.ErrOrStderr())
+	if err := a.root.Execute(); err != nil {
+		_, _ = fmt.Fprintln(a.root.ErrOrStderr(), err.Error())
+		return a.exitMapper.FromError(err)
+	}
+	return a.state.exitCode
 }
