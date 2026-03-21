@@ -94,9 +94,11 @@ func TestConfigValidator_Validate_Fail_WhenFormatInvalid(t *testing.T) {
 	cfg := validConfig()
 	cfg.Output.Format = "yaml"
 
-	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
 		t.Fatal("Validate() expected error")
 	}
+	assertHasFieldError(t, err, "output.format")
 }
 
 func TestConfigValidator_Validate_Fail_WhenReadProbeTargetMissingRequiredField(t *testing.T) {
@@ -108,6 +110,54 @@ func TestConfigValidator_Validate_Fail_WhenReadProbeTargetMissingRequiredField(t
 	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
 		t.Fatal("Validate() expected error")
 	}
+}
+
+func TestConfigValidator_Validate_Success_WhenMinSuccessTargetsIsZero(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.MinSuccessTargets = 0
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidator_Validate_Success_WhenQueryExprEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.Targets[0].QueryExpr = ""
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidator_Validate_Fail_WhenMinSuccessTargetsNegative(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.MinSuccessTargets = -1
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "probe.read.min_success_targets")
+}
+
+func TestConfigValidator_Validate_Fail_WhenURIHasScheme_FieldReported(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Cluster.Milvus.URI = "tcp://host:19530"
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "cluster.milvus.uri")
 }
 
 func TestConfigValidator_Validate_Fail_WhenRWProbeVectorDimInvalid(t *testing.T) {
@@ -232,4 +282,19 @@ func TestCLIOverrideApplier_CleanupOverride(t *testing.T) {
 	if cfg.Probe.RW.Cleanup {
 		t.Fatal("Probe.RW.Cleanup should be false")
 	}
+}
+
+func assertHasFieldError(t *testing.T, err error, field string) {
+	t.Helper()
+
+	cfgErr, ok := err.(*config.ConfigError)
+	if !ok {
+		t.Fatalf("error type = %T, want *config.ConfigError", err)
+	}
+	for _, entry := range cfgErr.Fields {
+		if entry.Field == field {
+			return
+		}
+	}
+	t.Fatalf("field error %q not found in %+v", field, cfgErr.Fields)
 }

@@ -16,7 +16,6 @@ probe:
     targets:
       - database: default
         collection: book
-        query_expr: "id >= 0"
         output_fields:
           - id
           - title

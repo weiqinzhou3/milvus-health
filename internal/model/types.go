@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,14 +48,41 @@ const (
 )
 
 func DetectArchProfile(version string) MilvusArchProfile {
+	major, minor, ok := parseMajorMinor(version)
+	if !ok || major != 2 {
+		return ArchProfileUnknown
+	}
+
 	switch {
-	case version == "2.4.7":
+	case minor == 4 || minor == 5:
 		return ArchProfileV24
-	case strings.HasPrefix(version, "2.6."):
+	case minor >= 6:
 		return ArchProfileV26
 	default:
 		return ArchProfileUnknown
 	}
+}
+
+func parseMajorMinor(version string) (int, int, bool) {
+	trimmed := strings.TrimSpace(version)
+	if trimmed == "" {
+		return 0, 0, false
+	}
+
+	parts := strings.Split(trimmed, ".")
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 type ErrorCode string
