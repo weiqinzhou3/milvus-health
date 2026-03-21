@@ -8,7 +8,7 @@ cluster:
 
 k8s:
   namespace: milvus
-  kubeconfig: /tmp/milvus-health-missing-kubeconfig
+  kubeconfig: examples/milvus-health-missing-kubeconfig
 
 probe:
   read:

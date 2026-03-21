@@ -6,7 +6,13 @@
 - 日志、warning、错误详情输出到 `stderr`
 - 最终状态通过固定退出码表达
 
-当前仓库仍处于第一阶段：`工程初始化 + 项目骨架 + TDD 基础设施 + 最小可运行闭环`。这意味着它已经可以编译、测试、展示 CLI 结构，但还没有接入真实的 Milvus/K8s 巡检能力。
+当前仓库仍处于第一阶段：`工程初始化 + 项目骨架 + TDD 基础设施 + 最小可运行闭环`。这意味着它已经可以编译、测试、展示 CLI 结构，但主分支仍应被视为 skeleton，而不是已经具备真实巡检能力的交付版本。
+
+## 文档入口
+
+- [docs/project-status.md](docs/project-status.md): 当前主分支状态、阶段判断、已实现/未实现边界。
+- [docs/dev-workflow.md](docs/dev-workflow.md): 多角色协作职责、Definition of Done、开发规则与推荐工作流。
+- [docs/README.md](docs/README.md): `docs/` 目录入口说明。
 
 ## 给外部模型的快速上下文
 
@@ -102,7 +108,7 @@ make run-help
 
 ## 配置说明
 
-配置样例见 [examples/config.example.yaml](/Users/zqw/Desktop/Project/milvus-health/examples/config.example.yaml)。
+配置样例见 [examples/config.example.yaml](examples/config.example.yaml)。
 
 当前已实现的最小配置约束：
 
