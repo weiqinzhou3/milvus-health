@@ -32,7 +32,7 @@
     }
   },
   "warnings": [
-    "K8s inventory unavailable: create k8s client: stat /tmp/milvus-health-missing-kubeconfig: no such file or directory"
+    "K8s inventory unavailable: create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory"
   ],
   "failures": [
     "create milvus client: context deadline exceeded"

@@ -85,8 +85,8 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 	default:
 		fields = append(fields, FieldError{Field: "output.format", Message: "must be text or json"})
 	}
-	if cfg.Probe.Read.MinSuccessTargets < 1 {
-		fields = append(fields, FieldError{Field: "probe.read.min_success_targets", Message: "must be >= 1"})
+	if cfg.Probe.Read.MinSuccessTargets < 0 {
+		fields = append(fields, FieldError{Field: "probe.read.min_success_targets", Message: "must be >= 0"})
 	}
 	for i, target := range cfg.Probe.Read.Targets {
 		if strings.TrimSpace(target.Database) == "" {
@@ -94,9 +94,6 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 		}
 		if strings.TrimSpace(target.Collection) == "" {
 			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].collection", i), Message: "is required"})
-		}
-		if strings.TrimSpace(target.QueryExpr) == "" {
-			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].query_expr", i), Message: "is required"})
 		}
 	}
 	if cfg.Probe.RW.Enabled {

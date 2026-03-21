@@ -4,5 +4,5 @@ Standby: false
 Confidence: low
 Exit Code: 2
 Summary: databases=0 collections=0 pods=0
-Warnings: K8s inventory unavailable: create k8s client: stat /tmp/milvus-health-missing-kubeconfig: no such file or directory
+Warnings: K8s inventory unavailable: create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory
 Failures: create milvus client: context deadline exceeded
