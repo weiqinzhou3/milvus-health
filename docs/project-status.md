@@ -48,7 +48,7 @@ Suggested stage sequence:
 | CLI (`cmd`) | Implemented | `check` / `validate` / `version` command skeleton exists |
 | App entry (`main.go`) | Implemented | Standard CLI entry already exists |
 | Config loading | Implemented | YAML loading is present |
-| Config validation | Partially implemented | Static validation exists, but only for skeleton-stage fields and rules |
+| Config validation | Partially implemented | Static validation exists and current config contract has been aligned with the latest spec/interface rules, but runtime behavior is still skeleton-stage |
 | Default values / CLI overrides | Implemented | Basic defaulting and override path exists |
 | Output rendering | Partially implemented | `text` / `json` renderers exist, but only for minimal skeleton output |
 | Exit-code mapping | Implemented | Pass/Warn/Fail/error mapping path exists |
@@ -134,6 +134,8 @@ Current config flow already includes:
 - static validation
 - default value application
 - CLI override application
+- version detection contract aligned for `v24` / `v26` mapping
+- config validation rules aligned with the current spec/interface contract
 
 ### 5.4 Render skeleton
 
@@ -215,6 +217,8 @@ The following review findings should be treated as current technical debt until 
 2. Even if collector- or platform-related code is visible in the repository, the current `main` branch still does not provide enough stable, reviewable evidence to claim real capability or operator-grade health truth.
 3. Spec/interface design have already moved forward conceptually, but `main` has not yet caught up with those targets.
 4. Any work completed by Codex or Claude Code but not pushed to GitHub is effectively invisible to review and should be treated as not done.
+
+This branch narrows part of mismatch item 3 by aligning the version-detection and config-validation contracts, but it does not add any real Milvus, Kubernetes, or probe execution capability.
 
 ## 8. Collaboration rule from now on
 

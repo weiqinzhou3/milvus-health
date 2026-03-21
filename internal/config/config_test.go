@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -56,6 +57,72 @@ func TestYAMLLoader_Load_Success(t *testing.T) {
 	}
 }
 
+func TestDefaultValueApplier_Apply_DefaultsMinSuccessTargetsWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\nprobe:\n  read:\n    targets:\n      - database: default\n        collection: book\noutput:\n  format: text\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := (config.YAMLLoader{}).Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	if cfg.Probe.Read.MinSuccessTargets != 1 {
+		t.Fatalf("Probe.Read.MinSuccessTargets = %d, want 1", cfg.Probe.Read.MinSuccessTargets)
+	}
+}
+
+func TestDefaultValueApplier_Apply_PreservesExplicitZeroMinSuccessTargets(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\nprobe:\n  read:\n    min_success_targets: 0\n    targets:\n      - database: default\n        collection: book\noutput:\n  format: text\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := (config.YAMLLoader{}).Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	if cfg.Probe.Read.MinSuccessTargets != 0 {
+		t.Fatalf("Probe.Read.MinSuccessTargets = %d, want 0", cfg.Probe.Read.MinSuccessTargets)
+	}
+}
+
+func TestDefaultValueApplier_Apply_PreservesExplicitPositiveMinSuccessTargets(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\nprobe:\n  read:\n    min_success_targets: 2\n    targets:\n      - database: default\n        collection: book\noutput:\n  format: text\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := (config.YAMLLoader{}).Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	if cfg.Probe.Read.MinSuccessTargets != 2 {
+		t.Fatalf("Probe.Read.MinSuccessTargets = %d, want 2", cfg.Probe.Read.MinSuccessTargets)
+	}
+}
+
 func TestConfigValidator_Validate_Success_MinimalConfig(t *testing.T) {
 	t.Parallel()
 
@@ -94,9 +161,11 @@ func TestConfigValidator_Validate_Fail_WhenFormatInvalid(t *testing.T) {
 	cfg := validConfig()
 	cfg.Output.Format = "yaml"
 
-	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
 		t.Fatal("Validate() expected error")
 	}
+	assertHasFieldError(t, err, "output.format")
 }
 
 func TestConfigValidator_Validate_Fail_WhenReadProbeTargetMissingRequiredField(t *testing.T) {
@@ -108,6 +177,54 @@ func TestConfigValidator_Validate_Fail_WhenReadProbeTargetMissingRequiredField(t
 	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
 		t.Fatal("Validate() expected error")
 	}
+}
+
+func TestConfigValidator_Validate_Success_WhenMinSuccessTargetsIsZero(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.MinSuccessTargets = 0
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidator_Validate_Success_WhenQueryExprEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.Targets[0].QueryExpr = ""
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidator_Validate_Fail_WhenMinSuccessTargetsNegative(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.MinSuccessTargets = -1
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "probe.read.min_success_targets")
+}
+
+func TestConfigValidator_Validate_Fail_WhenURIHasScheme_FieldReported(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Cluster.Milvus.URI = "tcp://host:19530"
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "cluster.milvus.uri")
 }
 
 func TestConfigValidator_Validate_Fail_WhenRWProbeVectorDimInvalid(t *testing.T) {
@@ -232,4 +349,19 @@ func TestCLIOverrideApplier_CleanupOverride(t *testing.T) {
 	if cfg.Probe.RW.Cleanup {
 		t.Fatal("Probe.RW.Cleanup should be false")
 	}
+}
+
+func assertHasFieldError(t *testing.T, err error, field string) {
+	t.Helper()
+
+	cfgErr, ok := err.(*config.ConfigError)
+	if !ok {
+		t.Fatalf("error type = %T, want *config.ConfigError", err)
+	}
+	for _, entry := range cfgErr.Fields {
+		if entry.Field == field {
+			return
+		}
+	}
+	t.Fatalf("field error %q not found in %+v", field, cfgErr.Fields)
 }
