@@ -2,7 +2,9 @@ package milvus
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	milvussdk "github.com/milvus-io/milvus/client/v2/milvusclient"
@@ -84,6 +86,35 @@ func (c *sdkClient) ListCollections(ctx context.Context, database string) ([]str
 	return collections, nil
 }
 
+func (c *sdkClient) GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error) {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return 0, err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	stats, err := client.GetCollectionStats(callCtx, milvussdk.NewGetCollectionStatsOption(collection))
+	if err != nil {
+		return 0, err
+	}
+
+	rowCount, err := parseCollectionRowCount(stats)
+	if err != nil {
+		return 0, fmt.Errorf("parse row_count for collection %q: %w", collection, err)
+	}
+	return rowCount, nil
+}
+
 func (c *sdkClient) Close(ctx context.Context) error {
 	callCtx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -108,4 +139,20 @@ func (c *sdkClient) withTimeout(ctx context.Context) (context.Context, context.C
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, c.callTimeout)
+}
+
+func parseCollectionRowCount(stats map[string]string) (int64, error) {
+	value, ok := stats["row_count"]
+	if !ok {
+		return 0, fmt.Errorf("row_count missing from collection statistics")
+	}
+
+	rowCount, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid row_count %q: %w", value, err)
+	}
+	if rowCount < 0 {
+		return 0, fmt.Errorf("row_count must be non-negative, got %d", rowCount)
+	}
+	return rowCount, nil
 }

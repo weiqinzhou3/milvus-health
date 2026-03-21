@@ -115,8 +115,12 @@ func TestCheckRunner_Run_ReturnsStubAnalysisResult(t *testing.T) {
 				ServerVersion:   "2.6.1",
 				DatabaseCount:   1,
 				CollectionCount: 1,
+				TotalRowCount:   int64Ptr(10),
 				Databases: []model.DatabaseInventory{
 					{Name: "default", Collections: []string{"book"}},
+				},
+				Collections: []model.CollectionInventory{
+					{Database: "default", Name: "book", RowCount: int64Ptr(10)},
 				},
 			},
 		},
@@ -154,8 +158,12 @@ func TestCheckRunner_FullStubPipeline_Works(t *testing.T) {
 				ServerVersion:   "2.6.1",
 				DatabaseCount:   1,
 				CollectionCount: 1,
+				TotalRowCount:   int64Ptr(10),
 				Databases: []model.DatabaseInventory{
 					{Name: "default", Collections: []string{"book"}},
+				},
+				Collections: []model.CollectionInventory{
+					{Database: "default", Name: "book", RowCount: int64Ptr(10)},
 				},
 			},
 		},
@@ -189,9 +197,15 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 			ServerVersion:   "2.5.4",
 			DatabaseCount:   2,
 			CollectionCount: 3,
+			TotalRowCount:   int64Ptr(60),
 			Databases: []model.DatabaseInventory{
 				{Name: "analytics", Collections: []string{"events"}},
 				{Name: "default", Collections: []string{"book", "movie"}},
+			},
+			Collections: []model.CollectionInventory{
+				{Database: "analytics", Name: "events", RowCount: int64Ptr(10)},
+				{Database: "default", Name: "book", RowCount: int64Ptr(20)},
+				{Database: "default", Name: "movie", RowCount: int64Ptr(30)},
 			},
 		},
 	}
@@ -216,6 +230,9 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 	}
 	if got.Inventory.Milvus.CollectionCount != 3 {
 		t.Fatalf("Inventory = %#v", got.Inventory.Milvus)
+	}
+	if got.Inventory.Milvus.TotalRowCount == nil || *got.Inventory.Milvus.TotalRowCount != 60 {
+		t.Fatalf("Inventory.TotalRowCount = %#v", got.Inventory.Milvus.TotalRowCount)
 	}
 	if len(got.Checks) != 3 {
 		t.Fatalf("Checks = %#v, want 3 checks", got.Checks)
@@ -266,4 +283,8 @@ func TestValidateRunner_ReturnsAppError_ForInvalidConfig(t *testing.T) {
 	if appErr.Code != model.ErrCodeConfigInvalid {
 		t.Fatalf("AppError.Code = %s, want %s", appErr.Code, model.ErrCodeConfigInvalid)
 	}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }

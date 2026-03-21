@@ -4,7 +4,7 @@ Last updated: 2026-03-21
 
 ## 1. Current conclusion
 
-The current working branch has moved beyond pure skeleton for the Milvus path and now provides a **Vertical Slice 1 / Real Milvus Inventory (minimal)** implementation.
+The current working branch has moved beyond the first Milvus slice and now provides **Iteration A2 / Milvus Inventory Enrichment** for the real Milvus path.
 
 This branch can now truthfully claim:
 
@@ -12,25 +12,28 @@ This branch can now truthfully claim:
 - real `milvus_version` is collected
 - `arch_profile` is derived from the real version using the spec v1.2 mapping
 - real database names and per-database collection name lists are collected
+- real per-collection row count collection is wired through `GetCollectionStatistics`
+- real cluster total row count is reported when all collection row counts are available
 - `check` text/json output is now driven by real Milvus facts when Milvus is reachable
 
-This branch still should **not** be treated as having full P0 coverage. Kubernetes health, read/write probes, row counts, binlog size, detailed collection metrics, and full analyzer rules are still out of scope or skeleton-only.
+This branch still should **not** be treated as having full P0 coverage. Data size / binlog size, Kubernetes health, read/write probes, richer collection metrics, and full analyzer rules are still out of scope or skeleton-only.
 
 ## 2. Stage assessment
 
-Current stage: **Stage 2 / Real Milvus inventory vertical slice (minimal)**
+Current stage: **Stage 2.5 / Real Milvus inventory with row count enrichment**
 
-Suggested next stage target: **Vertical Slice 2 - Real Kubernetes Basic Health**
+Suggested next stage target: **Vertical Slice 3 - Real Kubernetes Basic Health**
 
 Suggested stage sequence:
 
 1. Skeleton
 2. Real Milvus inventory vertical slice
-3. Real Kubernetes basic health vertical slice
-4. Analyzer rule expansion
-5. Business Read Probe
-6. RW Probe
-7. Detail-mode enrichment and operator usability polish
+3. Real Milvus inventory enrichment
+4. Real Kubernetes basic health vertical slice
+5. Analyzer rule expansion
+6. Business Read Probe
+7. RW Probe
+8. Detail-mode enrichment and operator usability polish
 
 ## 3. Module status overview
 
@@ -40,12 +43,12 @@ Suggested stage sequence:
 | App entry (`main.go`) | Implemented | Standard CLI entry already exists |
 | Config loading | Implemented | YAML loading is present |
 | Config validation | Implemented for current contract | Static validation, defaulting, and CLI override path are wired before collection |
-| Output rendering | Partially implemented | `text` / `json` renderers now expose minimal real Milvus facts; detail mode is still intentionally minimal |
+| Output rendering | Partially implemented | `text` / `json` renderers now expose real Milvus version/database/collection facts plus row count summary; detail mode still only covers the current minimal Milvus collection detail |
 | Exit-code mapping | Implemented | Pass/Warn/Fail/error mapping path exists |
-| Analyzer | Minimal runtime path | Analyzer consumes collected Milvus facts and runner-produced checks, but is not yet a full P0 rules engine |
-| Milvus platform client | Minimally implemented | Real client methods for `GetVersion`, `ListDatabases`, `ListCollections` now exist |
+| Analyzer | Minimal runtime path | Analyzer consumes collected Milvus facts and runner-produced checks, and now warns when row count collection is partial; it is not yet a full P0 rules engine |
+| Milvus platform client | Minimally implemented | Real client methods for `GetVersion`, `ListDatabases`, `ListCollections`, and per-collection row count now exist |
 | Kubernetes platform client | Placeholder only | Not part of this iteration |
-| Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are now real for the current minimal field set |
+| Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are real for version/database/collection inventory and row count enrichment |
 | Kubernetes collector | Placeholder only | Not part of this iteration |
 | Probes | Placeholder only | Business Read / RW probe real logic is still not implemented |
 | Tests | Implemented for this slice | Platform fake tests, Milvus collector tests, runner tests, renderer tests, analyzer tests, command/integration tests, smoke tests all cover the current slice |
@@ -59,6 +62,8 @@ Suggested stage sequence:
 - real version collection
 - real database listing
 - real collection listing per database
+- real per-collection row count via `GetCollectionStatistics`
+- real total row count when all collection row counts are available
 - arch profile detection based on real version
 
 ### 4.2 Check runner orchestration
@@ -81,12 +86,14 @@ Suggested stage sequence:
 - `cluster.arch_profile`
 - `inventory.milvus.database_count`
 - `inventory.milvus.collection_count`
+- `inventory.milvus.total_row_count`
 - `inventory.milvus.databases[].name`
 - `inventory.milvus.databases[].collections[]`
+- `inventory.milvus.collections[].row_count`
+- `summary.total_row_count`
 
 ## 5. What is intentionally not implemented in this branch
 
-- row count / total row count
 - binlog size / data size
 - index count / index type
 - vector field list
@@ -101,9 +108,10 @@ Suggested stage sequence:
 ## 6. Known gaps and technical debt
 
 1. `mq_type` is still reported as `unknown`; this branch does not attempt automatic MQ detection.
-2. The analyzer is intentionally minimal and should not yet be described as a full operator-grade health analyzer.
-3. Example outputs still demonstrate the failure path because the bundled example config points at an unavailable local Milvus endpoint.
-4. Flat legacy packages under `internal/platform` and `internal/collectors` still exist for compatibility; the new real Milvus path is in `internal/platform/milvus` and `internal/collectors/milvus`.
+2. Row count collection currently degrades to `unknown` on a per-collection basis if `GetCollectionStatistics` fails for that collection; the inventory path stays successful but total row count also becomes `unknown`.
+3. The analyzer is intentionally minimal and should not yet be described as a full operator-grade health analyzer.
+4. Example outputs still demonstrate the failure path because the bundled example config points at an unavailable local Milvus endpoint.
+5. Flat legacy packages under `internal/platform` and `internal/collectors` still exist for compatibility; the new real Milvus path is in `internal/platform/milvus` and `internal/collectors/milvus`.
 
 ## 7. Validation status
 

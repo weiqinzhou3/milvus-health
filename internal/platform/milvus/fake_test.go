@@ -35,3 +35,21 @@ func TestFakeClient_CloseMarksClosed(t *testing.T) {
 		t.Fatal("Close() should mark client closed")
 	}
 }
+
+func TestFakeClient_GetCollectionRowCount(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		RowCounts: map[string]map[string]int64{
+			"default": {"book": 42},
+		},
+	}
+
+	got, err := client.GetCollectionRowCount(context.Background(), "default", "book")
+	if err != nil {
+		t.Fatalf("GetCollectionRowCount() error = %v", err)
+	}
+	if got != 42 {
+		t.Fatalf("GetCollectionRowCount() = %d, want 42", got)
+	}
+}
