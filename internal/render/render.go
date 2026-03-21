@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
 )
 
 type RenderOptions struct {
@@ -35,7 +35,10 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	if opts.Detail && len(result.Checks) > 0 {
 		b.WriteString("Checks:\n")
 		for _, check := range result.Checks {
-			fmt.Fprintf(&b, "- %s: %s\n", check.Name, check.Status)
+			fmt.Fprintf(&b, "- %s [%s]: %s\n", check.Name, check.Status, check.Message)
+			if check.Recommendation != "" {
+				fmt.Fprintf(&b, "  Recommendation: %s\n", check.Recommendation)
+			}
 		}
 	}
 	return []byte(b.String()), nil
@@ -63,6 +66,6 @@ func (DefaultRendererFactory) Get(format model.OutputFormat) (Renderer, error) {
 	case model.OutputFormatJSON:
 		return JSONRenderer{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported format %q", format)
+		return nil, &model.AppError{Code: model.ErrCodeRender, Message: fmt.Sprintf("unsupported output format %q", format)}
 	}
 }

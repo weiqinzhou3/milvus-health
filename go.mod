@@ -1,4 +1,4 @@
-module milvus-health
+module github.com/weiqinzhou3/milvus-health
 
 go 1.23
 

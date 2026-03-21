@@ -1,6 +1,6 @@
 package cli
 
-import "milvus-health/internal/model"
+import "github.com/weiqinzhou3/milvus-health/internal/model"
 
 type ExitCodeMapper interface {
 	FromAnalysis(result *model.AnalysisResult) int

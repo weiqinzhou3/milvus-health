@@ -3,8 +3,8 @@ package cli_test
 import (
 	"testing"
 
-	"milvus-health/internal/cli"
-	"milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/cli"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
 )
 
 func TestExitCodeMapper_FromAnalysis(t *testing.T) {
@@ -38,5 +38,14 @@ func TestExitCodeMapper_FromError(t *testing.T) {
 	}
 	if got := m.FromError(&model.AppError{Code: model.ErrCodeRuntime}); got != 4 {
 		t.Fatalf("runtime = %d, want 4", got)
+	}
+}
+
+func TestExitCodeMapper_FromAppError_ConfigInvalid(t *testing.T) {
+	t.Parallel()
+
+	m := cli.DefaultExitCodeMapper{}
+	if got := m.FromError(&model.AppError{Code: model.ErrCodeConfigInvalid, Message: "bad config"}); got != 3 {
+		t.Fatalf("config invalid = %d, want 3", got)
 	}
 }

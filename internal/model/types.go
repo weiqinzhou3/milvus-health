@@ -85,7 +85,7 @@ func (e *AppError) Error() string {
 		return e.Message
 	}
 	if e.Cause != nil {
-		return fmt.Sprintf("%s: %v", e.Code, e.Cause)
+		return fmt.Sprintf("%s: %s", e.Code, e.Cause.Error())
 	}
 	return string(e.Code)
 }
@@ -98,10 +98,11 @@ func (e *AppError) Unwrap() error {
 }
 
 type Config struct {
-	Cluster ClusterConfig `yaml:"cluster"`
-	K8s     K8sConfig     `yaml:"k8s"`
-	Probe   ProbeConfig   `yaml:"probe"`
-	Output  OutputConfig  `yaml:"output"`
+	Cluster    ClusterConfig `yaml:"cluster"`
+	K8s        K8sConfig     `yaml:"k8s"`
+	Probe      ProbeConfig   `yaml:"probe"`
+	Output     OutputConfig  `yaml:"output"`
+	TimeoutSec int           `yaml:"timeout_sec"`
 }
 
 type ClusterConfig struct {
@@ -172,15 +173,17 @@ type ValidateOptions struct {
 }
 
 type CheckResult struct {
-	Category   string      `json:"category,omitempty"`
-	Name       string      `json:"name"`
-	Target     string      `json:"target,omitempty"`
-	Status     CheckStatus `json:"status"`
-	Severity   string      `json:"severity,omitempty"`
-	Message    string      `json:"message"`
-	Actual     any         `json:"actual,omitempty"`
-	Expected   any         `json:"expected,omitempty"`
-	DurationMS int64       `json:"duration_ms,omitempty"`
+	Category       string      `json:"category,omitempty"`
+	Name           string      `json:"name"`
+	Target         string      `json:"target,omitempty"`
+	Status         CheckStatus `json:"status"`
+	Severity       string      `json:"severity,omitempty"`
+	Message        string      `json:"message"`
+	Recommendation string      `json:"recommendation,omitempty"`
+	Evidence       []string    `json:"evidence,omitempty"`
+	Actual         any         `json:"actual,omitempty"`
+	Expected       any         `json:"expected,omitempty"`
+	DurationMS     int64       `json:"duration_ms,omitempty"`
 }
 
 type AnalysisSummary struct {

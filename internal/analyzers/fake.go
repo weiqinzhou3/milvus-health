@@ -3,7 +3,7 @@ package analyzers
 import (
 	"context"
 
-	"milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
 )
 
 type Analyzer interface {
@@ -33,7 +33,13 @@ func (FakeAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput) (*mod
 		},
 		Warnings: []string{"stub analysis only"},
 		Checks: []model.CheckResult{
-			{Name: "stub-check", Status: model.CheckStatusWarn, Message: "skeleton runner"},
+			{
+				Name:           "stub-check",
+				Status:         model.CheckStatusWarn,
+				Message:        "skeleton runner",
+				Recommendation: "implement real collectors and probes in later iterations",
+				Evidence:       []string{"fake analyzer path executed"},
+			},
 		},
 	}
 	if cfg != nil {
@@ -43,5 +49,6 @@ func (FakeAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput) (*mod
 			Namespace: cfg.K8s.Namespace,
 		}
 	}
+	result.ExitCode = 1
 	return result, nil
 }

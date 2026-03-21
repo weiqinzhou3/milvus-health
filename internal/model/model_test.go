@@ -3,7 +3,7 @@ package model_test
 import (
 	"testing"
 
-	"milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
 )
 
 func TestDetectArchProfile(t *testing.T) {

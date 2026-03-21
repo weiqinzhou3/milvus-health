@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"milvus-health/cmd"
+	"github.com/weiqinzhou3/milvus-health/cmd"
 )
 
 func main() {

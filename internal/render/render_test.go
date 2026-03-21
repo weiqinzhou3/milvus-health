@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"milvus-health/internal/model"
-	"milvus-health/internal/render"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
 func sampleResult() *model.AnalysisResult {
@@ -33,7 +33,7 @@ func sampleResult() *model.AnalysisResult {
 			RW:           model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "stub"},
 		},
 		Checks: []model.CheckResult{
-			{Name: "stub-check", Status: model.CheckStatusWarn, Message: "stub"},
+			{Name: "stub-check", Status: model.CheckStatusWarn, Message: "stub", Recommendation: "inspect fake pipeline", Evidence: []string{"warn evidence"}},
 		},
 	}
 }
@@ -102,5 +102,75 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		if !strings.Contains(text, token) {
 			t.Fatalf("text output missing %q: %s", token, text)
 		}
+	}
+}
+
+func TestTextRenderer_DetailFalse_NoVerboseChecks(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.TextRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: false})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(string(out), "stub-check") {
+		t.Fatalf("detail=false should not include check details: %s", out)
+	}
+}
+
+func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.TextRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if !strings.Contains(string(out), "stub-check") {
+		t.Fatalf("detail=true should include check details: %s", out)
+	}
+}
+
+func TestJSONRenderer_DetailFalse_StableShape(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: false})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	for _, field := range []string{"cluster", "result", "standby", "confidence", "exit_code"} {
+		if _, ok := decoded[field]; !ok {
+			t.Fatalf("missing field %q in output %s", field, out)
+		}
+	}
+	if _, ok := decoded["checks"]; ok {
+		t.Fatalf("detail=false should omit checks, got %s", out)
+	}
+}
+
+func TestJSONRenderer_DetailTrue_IncludesChecks(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if _, ok := decoded["checks"]; !ok {
+		t.Fatalf("detail=true should include checks, got %s", out)
+	}
+}
+
+func TestRendererFactory_InvalidFormat_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	_, err := (render.DefaultRendererFactory{}).Get("yaml")
+	if err == nil {
+		t.Fatal("Get() expected error")
 	}
 }

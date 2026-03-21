@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"milvus-health/internal/config"
-	"milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/config"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
 )
 
 type CheckRunner interface {
@@ -49,7 +49,9 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 	if r.Analyzer == nil {
 		return nil, &model.AppError{Code: model.ErrCodeRuntime, Cause: errors.New("analyzer is nil")}
 	}
-	return r.Analyzer.Analyze(ctx, model.AnalyzeInput{Config: cfg})
+	return r.Analyzer.Analyze(ctx, model.AnalyzeInput{
+		Config: cfg,
+	})
 }
 
 type DefaultValidateRunner struct {

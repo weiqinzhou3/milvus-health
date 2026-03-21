@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"milvus-health/internal/analyzers"
-	"milvus-health/internal/cli"
-	"milvus-health/internal/config"
-	"milvus-health/internal/model"
-	"milvus-health/internal/render"
+	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
+	"github.com/weiqinzhou3/milvus-health/internal/cli"
+	"github.com/weiqinzhou3/milvus-health/internal/config"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
 const Version = "0.1.0-skeleton"
@@ -58,7 +58,6 @@ func newVersionCmd(stdout io.Writer) *cobra.Command {
 }
 
 func newValidateCmd(stdout, stderr io.Writer, runner cli.ValidateRunner) *cobra.Command {
-	_ = stdout
 	_ = stderr
 	var opts model.ValidateOptions
 	command := &cobra.Command{
@@ -68,7 +67,11 @@ func newValidateCmd(stdout, stderr io.Writer, runner cli.ValidateRunner) *cobra.
 			if opts.ConfigPath == "" {
 				return &model.AppError{Code: model.ErrCodeConfigInvalid, Message: "--config is required"}
 			}
-			return runner.Run(context.Background(), opts)
+			if err := runner.Run(context.Background(), opts); err != nil {
+				return err
+			}
+			_, err := fmt.Fprintln(stdout, "config validation succeeded")
+			return err
 		},
 	}
 	command.Flags().StringVar(&opts.ConfigPath, "config", "", "config file path")
@@ -132,7 +135,14 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 }
 
 func Execute() int {
-	root := NewRootCmd(os.Stdout, os.Stderr)
+	return ExecuteArgs(os.Args[1:], os.Stdout, os.Stderr)
+}
+
+func ExecuteArgs(args []string, stdout, stderr io.Writer) int {
+	root := NewRootCmd(stdout, stderr)
+	root.SetArgs(args)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
 	if err := root.Execute(); err != nil {
 		mapper := cli.DefaultExitCodeMapper{}
 		_, _ = fmt.Fprintln(root.ErrOrStderr(), err.Error())

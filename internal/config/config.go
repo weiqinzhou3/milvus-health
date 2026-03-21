@@ -7,8 +7,33 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/model"
 )
+
+type FieldError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+type ConfigError struct {
+	Code    string       `json:"code"`
+	Message string       `json:"message"`
+	Fields  []FieldError `json:"fields,omitempty"`
+}
+
+func (e *ConfigError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if len(e.Fields) == 0 {
+		return e.Message
+	}
+	var parts []string
+	for _, field := range e.Fields {
+		parts = append(parts, fmt.Sprintf("%s: %s", field.Field, field.Message))
+	}
+	return fmt.Sprintf("%s (%s)", e.Message, strings.Join(parts, ", "))
+}
 
 type Loader interface {
 	Load(path string) (*model.Config, error)
@@ -44,24 +69,53 @@ type ConfigValidator struct{}
 
 func (ConfigValidator) Validate(cfg *model.Config) error {
 	if cfg == nil {
-		return fmt.Errorf("config is nil")
+		return &ConfigError{Code: "CONFIG_INVALID", Message: "config is nil"}
 	}
+	var fields []FieldError
 	if strings.TrimSpace(cfg.Cluster.Name) == "" {
-		return fmt.Errorf("cluster.name is required")
+		fields = append(fields, FieldError{Field: "cluster.name", Message: "is required"})
 	}
 	if strings.TrimSpace(cfg.Cluster.Milvus.URI) == "" {
-		return fmt.Errorf("cluster.milvus.uri is required")
-	}
-	if strings.Contains(cfg.Cluster.Milvus.URI, "://") {
-		return fmt.Errorf("cluster.milvus.uri must be host:port without scheme")
+		fields = append(fields, FieldError{Field: "cluster.milvus.uri", Message: "is required"})
+	} else if strings.Contains(cfg.Cluster.Milvus.URI, "://") {
+		fields = append(fields, FieldError{Field: "cluster.milvus.uri", Message: "must be host:port without scheme"})
 	}
 	switch cfg.Output.Format {
 	case model.OutputFormatText, model.OutputFormatJSON:
 	default:
-		return fmt.Errorf("output.format must be text or json")
+		fields = append(fields, FieldError{Field: "output.format", Message: "must be text or json"})
 	}
-	if cfg.Probe.Read.MinSuccessTargets < 0 {
-		return fmt.Errorf("probe.read.min_success_targets must be >= 0")
+	if cfg.Probe.Read.MinSuccessTargets < 1 {
+		fields = append(fields, FieldError{Field: "probe.read.min_success_targets", Message: "must be >= 1"})
+	}
+	for i, target := range cfg.Probe.Read.Targets {
+		if strings.TrimSpace(target.Database) == "" {
+			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].database", i), Message: "is required"})
+		}
+		if strings.TrimSpace(target.Collection) == "" {
+			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].collection", i), Message: "is required"})
+		}
+		if strings.TrimSpace(target.QueryExpr) == "" {
+			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].query_expr", i), Message: "is required"})
+		}
+	}
+	if cfg.Probe.RW.Enabled {
+		if strings.TrimSpace(cfg.Probe.RW.TestDatabasePrefix) == "" {
+			fields = append(fields, FieldError{Field: "probe.rw.test_database_prefix", Message: "is required"})
+		}
+		if cfg.Probe.RW.InsertRows <= 0 {
+			fields = append(fields, FieldError{Field: "probe.rw.insert_rows", Message: "must be > 0"})
+		}
+		if cfg.Probe.RW.VectorDim <= 0 {
+			fields = append(fields, FieldError{Field: "probe.rw.vector_dim", Message: "must be > 0"})
+		}
+	}
+	if len(fields) > 0 {
+		return &ConfigError{
+			Code:    "CONFIG_INVALID",
+			Message: "config validation failed",
+			Fields:  fields,
+		}
 	}
 	return nil
 }
@@ -69,11 +123,26 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 type DefaultValueApplier struct{}
 
 func (DefaultValueApplier) Apply(cfg *model.Config) {
+	if cfg == nil {
+		return
+	}
 	if cfg.Output.Format == "" {
 		cfg.Output.Format = model.OutputFormatText
 	}
 	if cfg.Probe.Read.MinSuccessTargets == 0 {
 		cfg.Probe.Read.MinSuccessTargets = 1
+	}
+	if cfg.Probe.RW.TestDatabasePrefix == "" {
+		cfg.Probe.RW.TestDatabasePrefix = "milvus_health_test"
+	}
+	if cfg.Probe.RW.InsertRows == 0 {
+		cfg.Probe.RW.InsertRows = 100
+	}
+	if cfg.Probe.RW.VectorDim == 0 {
+		cfg.Probe.RW.VectorDim = 128
+	}
+	if cfg.TimeoutSec == 0 {
+		cfg.TimeoutSec = 60
 	}
 }
 
@@ -88,6 +157,9 @@ func (CLIOverrideApplier) ApplyCheckOverrides(cfg *model.Config, opts model.Chec
 	}
 	if opts.Cleanup != nil {
 		cfg.Probe.RW.Cleanup = *opts.Cleanup
+	}
+	if opts.TimeoutSec > 0 {
+		cfg.TimeoutSec = opts.TimeoutSec
 	}
 	return nil
 }
