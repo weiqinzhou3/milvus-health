@@ -6,15 +6,19 @@ import (
 )
 
 type FakeClient struct {
-	Version        string
-	VersionErr     error
-	Databases      []string
-	DatabasesErr   error
-	Collections    map[string][]string
-	CollectionErrs map[string]error
-	RowCounts      map[string]map[string]int64
-	RowCountErrs   map[string]map[string]error
-	Closed         bool
+	Version          string
+	VersionErr       error
+	Databases        []string
+	DatabasesErr     error
+	Collections      map[string][]string
+	CollectionErrs   map[string]error
+	CollectionIDs    map[string]map[string]int64
+	CollectionIDErrs map[string]map[string]error
+	RowCounts        map[string]map[string]int64
+	RowCountErrs     map[string]map[string]error
+	MetricsByType    map[string]string
+	MetricsErrs      map[string]error
+	Closed           bool
 }
 
 func (f *FakeClient) GetVersion(ctx context.Context) (string, error) {
@@ -41,6 +45,22 @@ func (f *FakeClient) GetCollectionRowCount(ctx context.Context, database, collec
 		return 0, err
 	}
 	return f.RowCounts[database][collection], nil
+}
+
+func (f *FakeClient) GetCollectionID(ctx context.Context, database, collection string) (int64, error) {
+	_ = ctx
+	if err := f.CollectionIDErrs[database][collection]; err != nil {
+		return 0, err
+	}
+	return f.CollectionIDs[database][collection], nil
+}
+
+func (f *FakeClient) GetMetrics(ctx context.Context, metricType string) (string, error) {
+	_ = ctx
+	if err := f.MetricsErrs[metricType]; err != nil {
+		return "", err
+	}
+	return f.MetricsByType[metricType], nil
 }
 
 func (f *FakeClient) Close(ctx context.Context) error {

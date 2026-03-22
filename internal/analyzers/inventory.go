@@ -43,6 +43,7 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			DatabaseCount:            input.Inventory.Milvus.DatabaseCount,
 			CollectionCount:          input.Inventory.Milvus.CollectionCount,
 			TotalRowCount:            input.Inventory.Milvus.TotalRowCount,
+			TotalBinlogSizeBytes:     input.Inventory.Milvus.TotalBinlogSizeBytes,
 			PodCount:                 input.Inventory.K8s.TotalPodCount,
 			ReadyPodCount:            input.Inventory.K8s.ReadyPodCount,
 			NotReadyPodCount:         input.Inventory.K8s.NotReadyPodCount,
@@ -76,6 +77,25 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			Message:        buildRowCountWarning(missingCollections),
 			Recommendation: "verify GetCollectionStatistics availability for the affected collections",
 			Actual:         missingCollections,
+		})
+	}
+
+	missingBinlogCollections := collectionsMissingBinlogSize(input.Inventory.Milvus)
+	totalBinlogMissing := totalBinlogSizeMissing(input.Inventory.Milvus)
+	if totalBinlogMissing || len(missingBinlogCollections) > 0 {
+		warning := buildBinlogSizeWarning(missingBinlogCollections, totalBinlogMissing)
+		var actual any
+		if len(missingBinlogCollections) > 0 {
+			actual = missingBinlogCollections
+		}
+		result.Warnings = append(result.Warnings, warning)
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "milvus",
+			Name:           "milvus-binlog-size",
+			Status:         model.CheckStatusWarn,
+			Message:        warning,
+			Recommendation: "verify GetMetrics(\"system_info\") availability and DataCoord quota metrics coverage",
+			Actual:         actual,
 		})
 	}
 
@@ -246,6 +266,7 @@ func hasMilvusFacts(inventory model.MilvusInventory) bool {
 		inventory.DatabaseCount > 0 ||
 		inventory.CollectionCount > 0 ||
 		inventory.TotalRowCount != nil ||
+		inventory.TotalBinlogSizeBytes != nil ||
 		len(inventory.Collections) > 0 ||
 		len(inventory.Databases) > 0 ||
 		len(inventory.DatabaseNames) > 0
@@ -274,6 +295,35 @@ func collectionsMissingRowCount(inventory model.MilvusInventory) []string {
 
 func buildRowCountWarning(collections []string) string {
 	return "row count unavailable for: " + strings.Join(collections, ", ")
+}
+
+func collectionsMissingBinlogSize(inventory model.MilvusInventory) []string {
+	if len(inventory.Collections) == 0 {
+		return nil
+	}
+
+	missing := make([]string, 0)
+	for _, collection := range inventory.Collections {
+		if collection.BinlogSizeBytes == nil {
+			missing = append(missing, collection.Database+"."+collection.Name)
+		}
+	}
+	return missing
+}
+
+func totalBinlogSizeMissing(inventory model.MilvusInventory) bool {
+	return inventory.CollectionCount > 0 && inventory.TotalBinlogSizeBytes == nil
+}
+
+func buildBinlogSizeWarning(collections []string, totalMissing bool) string {
+	switch {
+	case totalMissing && len(collections) > 0:
+		return "total binlog size unavailable; per-collection binlog size unavailable for: " + strings.Join(collections, ", ")
+	case totalMissing:
+		return "total binlog size unavailable"
+	default:
+		return "binlog size unavailable for: " + strings.Join(collections, ", ")
+	}
 }
 
 func normalizeElapsedMS(startedAt, endedAt time.Time) int64 {

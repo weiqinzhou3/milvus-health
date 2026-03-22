@@ -2,7 +2,9 @@ package milvus
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/weiqinzhou3/milvus-health/internal/model"
@@ -61,6 +63,17 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 		Collections:   make([]model.CollectionInventory, 0),
 	}
 
+	binlogSizes, totalBinlogSize, binlogErr := c.fetchBinlogSizes(ctx, client)
+	if binlogErr != nil {
+		inventory.CapabilityDegraded = true
+		inventory.DegradedCapabilities = appendUnique(inventory.DegradedCapabilities, "binlog_size")
+	} else if totalBinlogSize != nil {
+		inventory.TotalBinlogSizeBytes = totalBinlogSize
+	} else {
+		inventory.CapabilityDegraded = true
+		inventory.DegradedCapabilities = appendUnique(inventory.DegradedCapabilities, "binlog_size_total")
+	}
+
 	var totalRowCount int64
 	rowCountComplete := true
 
@@ -83,6 +96,16 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 				Name:     collection,
 			}
 
+			collectionID, err := client.GetCollectionID(ctx, database, collection)
+			if err != nil {
+				return model.MilvusInventory{}, &model.AppError{
+					Code:    model.ErrCodeMilvusCollect,
+					Message: fmt.Sprintf("describe collection %q in database %q: %v", collection, database, err),
+					Cause:   err,
+				}
+			}
+			collectionInventory.CollectionID = collectionID
+
 			rowCount, err := client.GetCollectionRowCount(ctx, database, collection)
 			if err != nil {
 				rowCountComplete = false
@@ -91,6 +114,15 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 			} else {
 				collectionInventory.RowCount = int64Ptr(rowCount)
 				totalRowCount += rowCount
+			}
+
+			if binlogErr == nil {
+				if binlogSize, ok := binlogSizes[collectionID]; ok {
+					collectionInventory.BinlogSizeBytes = int64Ptr(binlogSize)
+				} else {
+					inventory.CapabilityDegraded = true
+					inventory.DegradedCapabilities = appendUnique(inventory.DegradedCapabilities, fmt.Sprintf("binlog_size:%s.%s", database, collection))
+				}
 			}
 
 			inventory.Collections = append(inventory.Collections, collectionInventory)
@@ -103,6 +135,19 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 		inventory.TotalRowCount = int64Ptr(totalRowCount)
 	}
 	return inventory, nil
+}
+
+func (c DefaultCollector) fetchBinlogSizes(ctx context.Context, client platformmilvus.Client) (map[int64]int64, *int64, error) {
+	response, err := client.GetMetrics(ctx, "system_info")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	metrics, err := parseBinlogMetrics(response)
+	if err != nil {
+		return nil, nil, err
+	}
+	return metrics.CollectionBinlogSize, metrics.TotalBinlogSize, nil
 }
 
 func (c DefaultCollector) newClient(ctx context.Context, cfg *model.Config) (platformmilvus.Client, error) {
@@ -144,4 +189,130 @@ func appendUnique(items []string, value string) []string {
 		}
 	}
 	return append(items, value)
+}
+
+type binlogMetrics struct {
+	TotalBinlogSize      *int64
+	CollectionBinlogSize map[int64]int64
+}
+
+func parseBinlogMetrics(payload string) (*binlogMetrics, error) {
+	var root any
+	if err := json.Unmarshal([]byte(payload), &root); err != nil {
+		return nil, fmt.Errorf("parse system_info metrics json: %w", err)
+	}
+
+	metrics, ok := findBinlogMetrics(root)
+	if !ok {
+		return nil, fmt.Errorf("DataCoordQuotaMetrics not found in system_info")
+	}
+	return metrics, nil
+}
+
+func findBinlogMetrics(node any) (*binlogMetrics, bool) {
+	switch value := node.(type) {
+	case map[string]any:
+		if metrics, ok := parseBinlogMetricsObject(value); ok {
+			return metrics, true
+		}
+		for _, child := range value {
+			if metrics, ok := findBinlogMetrics(child); ok {
+				return metrics, true
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if metrics, ok := findBinlogMetrics(child); ok {
+				return metrics, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func parseBinlogMetricsObject(node map[string]any) (*binlogMetrics, bool) {
+	quotaMetrics := node
+	if nestedQuotaMetrics, ok := getMapAnyAlias(node, "quota_metrics", "QuotaMetrics"); ok {
+		quotaMetrics = nestedQuotaMetrics
+	}
+
+	totalRaw, hasTotal := getAnyAlias(quotaMetrics, "total_binlog_size", "TotalBinlogSize")
+	collectionRaw, hasCollections := getAnyAlias(quotaMetrics, "collection_binlog_size", "CollectionBinlogSize")
+	if !hasTotal && !hasCollections {
+		return nil, false
+	}
+
+	var total *int64
+	if hasTotal {
+		parsedTotal, err := parseJSONInt64(totalRaw)
+		if err != nil {
+			return nil, false
+		}
+		total = int64Ptr(parsedTotal)
+	}
+
+	collectionMap := make(map[int64]int64)
+	if hasCollections {
+		items, ok := normalizeStringKeyMap(collectionRaw)
+		if !ok {
+			return nil, false
+		}
+		for key, rawValue := range items {
+			collectionID, err := strconv.ParseInt(key, 10, 64)
+			if err != nil {
+				return nil, false
+			}
+			binlogSize, err := parseJSONInt64(rawValue)
+			if err != nil {
+				return nil, false
+			}
+			collectionMap[collectionID] = binlogSize
+		}
+	}
+
+	return &binlogMetrics{
+		TotalBinlogSize:      total,
+		CollectionBinlogSize: collectionMap,
+	}, true
+}
+
+func getAnyAlias(node map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		value, ok := node[key]
+		if ok {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func getMapAnyAlias(node map[string]any, keys ...string) (map[string]any, bool) {
+	value, ok := getAnyAlias(node, keys...)
+	if !ok {
+		return nil, false
+	}
+	mapped, ok := normalizeStringKeyMap(value)
+	return mapped, ok
+}
+
+func normalizeStringKeyMap(value any) (map[string]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		return typed, true
+	default:
+		return nil, false
+	}
+}
+
+func parseJSONInt64(value any) (int64, error) {
+	switch v := value.(type) {
+	case float64:
+		return int64(v), nil
+	case string:
+		return strconv.ParseInt(v, 10, 64)
+	case json.Number:
+		return v.Int64()
+	default:
+		return 0, fmt.Errorf("unsupported int64 value type %T", value)
+	}
 }

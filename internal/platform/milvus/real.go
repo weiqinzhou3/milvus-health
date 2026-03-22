@@ -2,12 +2,21 @@ package milvus
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	milvussdk "github.com/milvus-io/milvus/client/v2/milvusclient"
+	"github.com/milvus-io/milvus/pkg/util/commonpbutil"
+	"github.com/milvus-io/milvus/pkg/util/crypto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 type SDKClientFactory struct{}
@@ -115,6 +124,43 @@ func (c *sdkClient) GetCollectionRowCount(ctx context.Context, database, collect
 	return rowCount, nil
 }
 
+func (c *sdkClient) GetCollectionID(ctx context.Context, database, collection string) (int64, error) {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return 0, err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	description, err := client.DescribeCollection(callCtx, milvussdk.NewDescribeCollectionOption(collection))
+	if err != nil {
+		return 0, err
+	}
+	return description.ID, nil
+}
+
+func (c *sdkClient) GetMetrics(ctx context.Context, metricType string) (string, error) {
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	rawClient, err := newRawServiceClient(callCtx, c.baseConfig)
+	if err != nil {
+		return "", err
+	}
+	defer rawClient.Close()
+
+	return rawClient.GetMetrics(callCtx, metricType)
+}
+
 func (c *sdkClient) Close(ctx context.Context) error {
 	callCtx, cancel := c.withTimeout(ctx)
 	defer cancel()
@@ -155,4 +201,100 @@ func parseCollectionRowCount(stats map[string]string) (int64, error) {
 		return 0, fmt.Errorf("row_count must be non-negative, got %d", rowCount)
 	}
 	return rowCount, nil
+}
+
+type rawServiceClient struct {
+	conn       *grpc.ClientConn
+	service    milvuspb.MilvusServiceClient
+	identifier string
+	authHeader string
+}
+
+func newRawServiceClient(ctx context.Context, cfg Config) (*rawServiceClient, error) {
+	conn, err := grpc.DialContext(
+		ctx,
+		cfg.Address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &rawServiceClient{
+		conn:    conn,
+		service: milvuspb.NewMilvusServiceClient(conn),
+	}
+	if cfg.Token != "" {
+		client.authHeader = crypto.Base64Encode(cfg.Token)
+	} else if cfg.Username != "" || cfg.Password != "" {
+		client.authHeader = crypto.Base64Encode(fmt.Sprintf("%s:%s", cfg.Username, cfg.Password))
+	}
+
+	connectCtx := client.appendMetadata(ctx)
+	resp, err := client.service.Connect(connectCtx, &milvuspb.ConnectRequest{
+		ClientInfo: &commonpb.ClientInfo{
+			SdkType:    "milvus-health",
+			SdkVersion: "dev",
+			LocalTime:  time.Now().Format(time.RFC3339),
+			User:       cfg.Username,
+		},
+	})
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if status := resp.GetStatus(); status != nil && status.GetErrorCode() != commonpb.ErrorCode_Success {
+		conn.Close()
+		return nil, fmt.Errorf("connect for metrics failed: %s", status.GetReason())
+	}
+	client.identifier = strconv.FormatInt(resp.GetIdentifier(), 10)
+	return client, nil
+}
+
+func (c *rawServiceClient) GetMetrics(ctx context.Context, metricType string) (string, error) {
+	req, err := constructMetricsRequest(metricType)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.service.GetMetrics(c.appendMetadata(ctx), req)
+	if err != nil {
+		return "", err
+	}
+	if status := resp.GetStatus(); status != nil && status.GetErrorCode() != commonpb.ErrorCode_Success {
+		return "", fmt.Errorf("get metrics failed: %s", status.GetReason())
+	}
+	return resp.GetResponse(), nil
+}
+
+func (c *rawServiceClient) Close() error {
+	if c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
+
+func (c *rawServiceClient) appendMetadata(ctx context.Context) context.Context {
+	if c.authHeader != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", c.authHeader)
+	}
+	if c.identifier != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "identifier", c.identifier)
+	}
+	return ctx
+}
+
+func constructMetricsRequest(metricType string) (*milvuspb.GetMetricsRequest, error) {
+	payload, err := json.Marshal(map[string]string{"metric_type": metricType})
+	if err != nil {
+		return nil, err
+	}
+	return &milvuspb.GetMetricsRequest{
+		Base: commonpbutil.NewMsgBase(
+			commonpbutil.WithMsgType(commonpb.MsgType_SystemInfo),
+		),
+		Request: string(payload),
+	}, nil
 }

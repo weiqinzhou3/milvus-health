@@ -30,8 +30,14 @@ func fakeRealDependencies() dependencies {
 						Collections: map[string][]string{
 							"default": {"book"},
 						},
+						CollectionIDs: map[string]map[string]int64{
+							"default": {"book": 1001},
+						},
 						RowCounts: map[string]map[string]int64{
 							"default": {"book": 123},
+						},
+						MetricsByType: map[string]string{
+							"system_info": `{"quota_metrics":{"total_binlog_size":4567,"collection_binlog_size":{"1001":4567}}}`,
 						},
 					},
 				},
@@ -81,7 +87,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}
