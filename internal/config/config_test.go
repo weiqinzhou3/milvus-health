@@ -137,6 +137,19 @@ func TestDefaultValueApplier_Apply_DefaultsResourceWarnRatioWhenUnset(t *testing
 	}
 }
 
+func TestDefaultValueApplier_Apply_DefaultsK8sResourceUsageSourceWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.K8s.ResourceUsage.Source = ""
+
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	if cfg.K8s.ResourceUsage.Source != model.K8sResourceUsageSourceAuto {
+		t.Fatalf("K8s.ResourceUsage.Source = %q, want %q", cfg.K8s.ResourceUsage.Source, model.K8sResourceUsageSourceAuto)
+	}
+}
+
 func TestConfigValidator_Validate_Success_MinimalConfig(t *testing.T) {
 	t.Parallel()
 
@@ -145,6 +158,38 @@ func TestConfigValidator_Validate_Success_MinimalConfig(t *testing.T) {
 	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
+}
+
+func TestConfigValidator_Validate_Success_WhenK8sResourceUsageSourceValid(t *testing.T) {
+	t.Parallel()
+
+	sources := []model.K8sResourceUsageSource{
+		model.K8sResourceUsageSourceAuto,
+		model.K8sResourceUsageSourceMetricsAPI,
+		model.K8sResourceUsageSourceDisabled,
+	}
+
+	for _, source := range sources {
+		cfg := validConfig()
+		cfg.K8s.ResourceUsage.Source = source
+
+		if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+			t.Fatalf("Validate(%q) error = %v", source, err)
+		}
+	}
+}
+
+func TestConfigValidator_Validate_Fail_WhenK8sResourceUsageSourceInvalid(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.K8s.ResourceUsage.Source = "prometheus"
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "k8s.resource_usage.source")
 }
 
 func TestConfigValidator_Validate_Fail_WhenMilvusURIEmpty(t *testing.T) {

@@ -33,6 +33,7 @@ func sampleResult() *model.AnalysisResult {
 			PodCount:                 2,
 			ReadyPodCount:            1,
 			NotReadyPodCount:         1,
+			ResourceUsageSource:      model.K8sResourceUsageSourceAuto,
 			MetricsAvailablePodCount: 1,
 			ServiceCount:             1,
 			EndpointCount:            1,
@@ -57,6 +58,7 @@ func sampleResult() *model.AnalysisResult {
 			},
 			K8s: model.K8sInventory{
 				Namespace:                "milvus",
+				ResourceUsageSource:      model.K8sResourceUsageSourceAuto,
 				TotalPodCount:            2,
 				ReadyPodCount:            1,
 				NotReadyPodCount:         1,
@@ -155,7 +157,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage_source=auto resource_usage=partial (1/2 pods have metrics)", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -190,6 +192,9 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "Inventory:") {
 		t.Fatalf("detail=true should include inventory summary: %s", out)
 	}
+	if !strings.Contains(string(out), "resource_usage_source=auto resource_usage=partial (1/2 pods have metrics)") {
+		t.Fatalf("detail=true should include resource usage source and summary: %s", out)
+	}
 	if !strings.Contains(string(out), "Collection Detail:\n- default.book: row_count=123") {
 		t.Fatalf("detail=true should include collection row count detail: %s", out)
 	}
@@ -204,6 +209,33 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "Endpoint Detail:\n- milvus: addresses=10.0.0.1") {
 		t.Fatalf("detail=true should include endpoint detail: %s", out)
+	}
+}
+
+func TestTextRenderer_DisabledResourceUsage_DoesNotSuggestInstall(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Inventory.K8s.ResourceUsageSource = model.K8sResourceUsageSourceDisabled
+	result.Inventory.K8s.ResourceUsageAvailable = false
+	result.Inventory.K8s.ResourceUsagePartial = false
+	result.Inventory.K8s.ResourceUnavailableReason = model.MetricsUnavailableReasonDisabled
+	result.Inventory.K8s.MetricsAvailablePodCount = 0
+	result.Warnings = nil
+	result.Checks = []model.CheckResult{
+		{Name: "k8s-resource-usage", Status: model.CheckStatusSkip, Message: "resource usage disabled by config"},
+	}
+
+	out, err := (render.TextRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	text := string(out)
+	if !strings.Contains(text, "resource_usage_source=disabled resource_usage=disabled") {
+		t.Fatalf("disabled source should be explicit: %s", text)
+	}
+	if strings.Contains(text, "install metrics-server") {
+		t.Fatalf("disabled output should not suggest metrics-server installation: %s", text)
 	}
 }
 

@@ -4,7 +4,7 @@ Last updated: 2026-03-22
 
 ## 1. Current conclusion
 
-The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, and the **Iteration C1 post-trial fixes** on the real collection path.
+The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, **Iteration B2.1 / Kubernetes Resource Usage Source Semantics**, and the **Iteration C1 post-trial fixes** on the real collection path.
 
 This branch can now truthfully claim:
 
@@ -15,21 +15,24 @@ This branch can now truthfully claim:
 - real per-collection row count collection is wired through `GetCollectionStatistics`
 - real cluster total row count is reported when all collection row counts are available
 - real Kubernetes pod basic status collection is wired into `check`
-- real Kubernetes pod CPU/memory usage collection is wired into `check` when metrics-server is available
+- Kubernetes resource usage source is now explicitly configurable via `k8s.resource_usage.source`
+- real Kubernetes pod CPU/memory usage collection is wired into `check` when the configured source resolves to the Kubernetes Metrics API and metrics data is available
 - real Kubernetes pod CPU/memory request and limit collection is wired into `check`
 - real Kubernetes pod usage/limit and usage/request ratio rendering is wired into text/json output, with `null` / `unknown` degrade semantics when metrics are missing
-- real Kubernetes metrics degrade semantics are now surfaced, including `metrics-server not found`, `insufficient permissions`, and partial metrics coverage
+- real Kubernetes metrics degrade semantics are now surfaced, including `disabled by config`, `metrics-server not found`, `insufficient permissions`, and partial metrics coverage
+- `disabled` cleanly skips dynamic usage collection and keeps request/limit facts available without suggesting that customers must install metrics-server
+- current concrete source behaviors are `metrics-api` and `disabled`; `auto` currently aliases the Metrics API path and is structured for future source expansion
 - real Kubernetes service inventory is collected
 - NodePort service ports now render as `port:nodePort/protocol` for detail output, for example `3000:30031/tcp`
 - real Kubernetes endpoint inventory is collected with `EndpointSlice` first and `Endpoints` fallback
 - `mq_type` now has minimal reliable detection: explicit config is honored, `pulsar`/`kafka` can be inferred conservatively from K8s service names, and `rocksmq` is supported via explicit config or alias normalization
 - `check` text/json output is now driven by real Milvus facts when Milvus is reachable
 
-This branch still should **not** be treated as having full P0 coverage. Binlog size / total binlog size bytes, read/write probes, richer Milvus inventory metrics, and the full analyzer rule matrix are still out of scope or skeleton-only.
+This branch still should **not** be treated as having full P0 coverage. Binlog size / total binlog size bytes, read/write probes, richer Milvus inventory metrics, Prometheus/component-metrics resource usage sources, and the full analyzer rule matrix are still out of scope or skeleton-only.
 
 ## 2. Stage assessment
 
-Current stage: **Stage 4 / Real Milvus inventory with row count enrichment plus Kubernetes basic status and metrics/resource usage, with C1 post-trial fixes**
+Current stage: **Stage 4 / Real Milvus inventory with row count enrichment plus Kubernetes basic status and configurable metrics/resource usage semantics, with C1 post-trial fixes**
 
 Suggested next stage target: **Stage 5 - Analyzer rule expansion**
 
@@ -51,14 +54,14 @@ Suggested stage sequence:
 | CLI (`cmd`) | Implemented | `check` / `validate` / `version` command path exists and `check` now reaches real Milvus collection |
 | App entry (`main.go`) | Implemented | Standard CLI entry already exists |
 | Config loading | Implemented | YAML loading is present |
-| Config validation | Implemented for current contract | Static validation, defaulting, and CLI override path are wired before collection |
-| Output rendering | Partially implemented | `text` / `json` renderers now expose real Milvus version/database/collection facts plus K8s pod/service/endpoint counts, pod CPU/memory usage, request/limit facts, ratio fields, and metrics degrade summaries; detail mode includes minimal Milvus and K8s detail, including NodePort `port:nodePort/protocol` rendering |
+| Config validation | Implemented for current contract | Static validation, defaulting, and CLI override path are wired before collection, including `k8s.resource_usage.source=auto|metrics-api|disabled` |
+| Output rendering | Partially implemented | `text` / `json` renderers now expose real Milvus version/database/collection facts plus K8s pod/service/endpoint counts, configured resource usage source, usage availability state, pod CPU/memory usage, request/limit facts, ratio fields, and metrics degrade summaries; detail mode includes minimal Milvus and K8s detail, including NodePort `port:nodePort/protocol` rendering |
 | Exit-code mapping | Implemented | Pass/Warn/Fail/error mapping path exists |
-| Analyzer | Minimal runtime path | Analyzer consumes collected Milvus and K8s facts, warns on partial row count, pod not ready, restart_count > 0, metrics unavailable/partial, and usage/limit ratio threshold breaches; it is not yet a full P0 rules engine |
+| Analyzer | Minimal runtime path | Analyzer consumes collected Milvus and K8s facts, warns on partial row count, pod not ready, restart_count > 0, metrics unavailable/partial, and usage/limit ratio threshold breaches, and now skips resource usage checks when the source is disabled by config; it is not yet a full P0 rules engine |
 | Milvus platform client | Minimally implemented | Real client methods for `GetVersion`, `ListDatabases`, `ListCollections`, and per-collection row count now exist |
-| Kubernetes platform client | Minimally implemented | Real client methods for `ListPods`, `ListServices`, `ListEndpoints`, and `ListPodMetrics` now exist, with spec-aligned metrics degrade semantics |
+| Kubernetes platform client | Minimally implemented | Real client methods for `ListPods`, `ListServices`, `ListEndpoints`, and `ListPodMetrics` now exist, with spec-aligned metrics degrade semantics; only the Kubernetes Metrics API path is implemented for dynamic usage today |
 | Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are real for version/database/collection inventory and row count enrichment; `arch_profile` detection now accepts `v`-prefixed versions |
-| Kubernetes collector | Minimally implemented | Real pod/service/endpoint inventory collection is wired through the check runner; pod metrics, request/limit enrichment, ratio calculation, and partial/unavailable metrics semantics are now included; NodePort service details are preserved in rendered port strings |
+| Kubernetes collector | Minimally implemented | Real pod/service/endpoint inventory collection is wired through the check runner; pod metrics, request/limit enrichment, ratio calculation, source selection (`auto` / `metrics-api` / `disabled`), and partial/unavailable metrics semantics are now included; NodePort service details are preserved in rendered port strings |
 | Probes | Placeholder only | Business Read / RW probe real logic is still not implemented |
 | Tests | Implemented for this slice | Platform tests, K8s collector tests, runner tests, renderer golden tests, analyzer tests, command/integration tests, and smoke tests cover the current slice |
 | Examples | Implemented | Example outputs updated to current runtime behavior |
@@ -90,7 +93,13 @@ Suggested stage sequence:
 9. run minimal analyzer
 10. render text/json output
 
-### 4.3 Real facts now visible in output
+### 4.3 K8s resource usage source semantics
+
+- `k8s.resource_usage.source` is wired through config, collection, analysis, and rendering
+- `metrics-api` preserves the current Metrics API behavior
+- `disabled` skips dynamic usage collection while preserving request/limit display
+- `auto` currently follows the Kubernetes Metrics API path and exists as the extension point for future sources
+### 4.4 Real facts now visible in output
 
 - `cluster.milvus_version`
 - `cluster.arch_profile`
@@ -103,8 +112,10 @@ Suggested stage sequence:
 - `inventory.milvus.collections[].row_count`
 - `summary.total_row_count`
 - `summary.pod_count`
+- `summary.resource_usage_source`
 - `summary.service_count`
 - `summary.endpoint_count`
+- `inventory.k8s.resource_usage_source`
 - `inventory.k8s.pods[]`
 - `inventory.k8s.services[]`
 - `inventory.k8s.endpoints[]`
@@ -112,6 +123,8 @@ Suggested stage sequence:
 ## 5. What is intentionally not implemented in this branch
 
 - binlog size / data size
+- Prometheus-backed resource usage source
+- component metrics-backed resource usage source
 - collection size
 - total data size
 - index count / index type
@@ -123,6 +136,7 @@ Suggested stage sequence:
 - binlog_size_bytes / total binlog size bytes
 - full analyzer rule matrix
 - probes
+- Prometheus / component metrics resource usage sources
 - standby / confidence advanced logic beyond minimal severity mapping
 
 ## 6. Known gaps and technical debt

@@ -9,12 +9,12 @@ Standby: false
 Confidence: medium
 Exit Code: 1
 Summary: databases=1 collections=1 total_rows=123 pods=2
-K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)
+K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage_source=auto resource_usage=partial (1/2 pods have metrics)
 Databases: default(book)
 Inventory: milvus_version=2.6.1 databases=1 collections=1 total_rows=123
 Collection Detail:
 - default.book: row_count=123
-Inventory: namespace=milvus pods=2 ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)
+Inventory: namespace=milvus pods=2 ready=1 not_ready=1 services=1 endpoints=1 resource_usage_source=auto resource_usage=partial (1/2 pods have metrics)
 Pod Detail:
 - milvus-0: phase=Running ready=true restart_count=0 cpu_usage=125m memory_usage=256Mi cpu_request=500m cpu_limit=1 memory_request=512Mi memory_limit=1Gi cpu_request_ratio=0.2500 cpu_limit_ratio=0.1250 memory_request_ratio=0.5000 memory_limit_ratio=0.2500
 - milvus-1: phase=Pending ready=false restart_count=0 cpu_usage=unknown memory_usage=unknown cpu_request=unknown cpu_limit=unknown memory_request=unknown memory_limit=unknown cpu_request_ratio=unknown cpu_limit_ratio=unknown memory_request_ratio=unknown memory_limit_ratio=unknown

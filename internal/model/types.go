@@ -43,9 +43,18 @@ type MetricsUnavailableReason string
 
 const (
 	MetricsUnavailableReasonNone             MetricsUnavailableReason = ""
+	MetricsUnavailableReasonDisabled         MetricsUnavailableReason = "disabled by config"
 	MetricsUnavailableReasonNotFound         MetricsUnavailableReason = "metrics-server not found"
 	MetricsUnavailableReasonPermissionDenied MetricsUnavailableReason = "insufficient permissions"
 	MetricsUnavailableReasonUnknown          MetricsUnavailableReason = "unknown"
+)
+
+type K8sResourceUsageSource string
+
+const (
+	K8sResourceUsageSourceAuto       K8sResourceUsageSource = "auto"
+	K8sResourceUsageSourceMetricsAPI K8sResourceUsageSource = "metrics-api"
+	K8sResourceUsageSourceDisabled   K8sResourceUsageSource = "disabled"
 )
 
 type MilvusArchProfile string
@@ -177,8 +186,13 @@ type MilvusConfig struct {
 }
 
 type K8sConfig struct {
-	Namespace  string `yaml:"namespace"`
-	Kubeconfig string `yaml:"kubeconfig"`
+	Namespace     string                 `yaml:"namespace"`
+	Kubeconfig    string                 `yaml:"kubeconfig"`
+	ResourceUsage K8sResourceUsageConfig `yaml:"resource_usage"`
+}
+
+type K8sResourceUsageConfig struct {
+	Source K8sResourceUsageSource `yaml:"source"`
 }
 
 type DependenciesConfig struct {
@@ -284,15 +298,16 @@ type CheckResult struct {
 }
 
 type AnalysisSummary struct {
-	DatabaseCount            int    `json:"database_count"`
-	CollectionCount          int    `json:"collection_count"`
-	TotalRowCount            *int64 `json:"total_row_count"`
-	PodCount                 int    `json:"pod_count"`
-	ReadyPodCount            int    `json:"ready_pod_count"`
-	NotReadyPodCount         int    `json:"not_ready_pod_count"`
-	MetricsAvailablePodCount int    `json:"metrics_available_pod_count"`
-	ServiceCount             int    `json:"service_count"`
-	EndpointCount            int    `json:"endpoint_count"`
+	DatabaseCount            int                    `json:"database_count"`
+	CollectionCount          int                    `json:"collection_count"`
+	TotalRowCount            *int64                 `json:"total_row_count"`
+	PodCount                 int                    `json:"pod_count"`
+	ReadyPodCount            int                    `json:"ready_pod_count"`
+	NotReadyPodCount         int                    `json:"not_ready_pod_count"`
+	ResourceUsageSource      K8sResourceUsageSource `json:"resource_usage_source"`
+	MetricsAvailablePodCount int                    `json:"metrics_available_pod_count"`
+	ServiceCount             int                    `json:"service_count"`
+	EndpointCount            int                    `json:"endpoint_count"`
 }
 
 type ClusterInventory struct {
@@ -329,6 +344,7 @@ type CollectionInventory struct {
 type K8sInventory struct {
 	Namespace                 string                   `json:"namespace,omitempty"`
 	ArchProfile               MilvusArchProfile        `json:"arch_profile"`
+	ResourceUsageSource       K8sResourceUsageSource   `json:"resource_usage_source"`
 	TotalPodCount             int                      `json:"total_pod_count"`
 	ReadyPodCount             int                      `json:"ready_pod_count"`
 	NotReadyPodCount          int                      `json:"not_ready_pod_count"`

@@ -19,6 +19,7 @@
     "pod_count": 2,
     "ready_pod_count": 1,
     "not_ready_pod_count": 1,
+    "resource_usage_source": "auto",
     "metrics_available_pod_count": 1,
     "service_count": 1,
     "endpoint_count": 1
@@ -63,6 +64,7 @@
     "k8s": {
       "namespace": "milvus",
       "arch_profile": "",
+      "resource_usage_source": "auto",
       "total_pod_count": 2,
       "ready_pod_count": 1,
       "not_ready_pod_count": 1,

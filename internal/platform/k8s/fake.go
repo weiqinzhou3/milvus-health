@@ -14,6 +14,7 @@ type FakeClient struct {
 	EndpointsErr error
 	Metrics      PlatformMetricsResult
 	MetricsErr   error
+	MetricsCalls int
 }
 
 func (f *FakeClient) ListPods(ctx context.Context, namespace string) ([]Pod, error) {
@@ -37,6 +38,7 @@ func (f *FakeClient) ListEndpoints(ctx context.Context, namespace string) ([]End
 func (f *FakeClient) ListPodMetrics(ctx context.Context, namespace string) (PlatformMetricsResult, error) {
 	_ = ctx
 	_ = namespace
+	f.MetricsCalls++
 	result := PlatformMetricsResult{
 		Available:         f.Metrics.Available,
 		UnavailableReason: f.Metrics.UnavailableReason,

@@ -83,6 +83,11 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 	if rawMQType := strings.TrimSpace(cfg.Dependencies.MQ.Type); rawMQType != "" && model.NormalizeMQType(rawMQType) == "unknown" {
 		fields = append(fields, FieldError{Field: "dependencies.mq.type", Message: "must be pulsar, kafka, rocksmq, unknown, or woodpecker"})
 	}
+	switch cfg.K8s.ResourceUsage.Source {
+	case "", model.K8sResourceUsageSourceAuto, model.K8sResourceUsageSourceMetricsAPI, model.K8sResourceUsageSourceDisabled:
+	default:
+		fields = append(fields, FieldError{Field: "k8s.resource_usage.source", Message: "must be auto, metrics-api, or disabled"})
+	}
 	if cfg.Rules.ResourceWarnRatio <= 0 || cfg.Rules.ResourceWarnRatio > 1 {
 		fields = append(fields, FieldError{Field: "rules.resource_warn_ratio", Message: "must be in (0, 1]"})
 	}
@@ -131,6 +136,9 @@ func (DefaultValueApplier) Apply(cfg *model.Config) {
 	}
 	if cfg.Output.Format == "" {
 		cfg.Output.Format = model.OutputFormatText
+	}
+	if cfg.K8s.ResourceUsage.Source == "" {
+		cfg.K8s.ResourceUsage.Source = model.K8sResourceUsageSourceAuto
 	}
 	if cfg.Probe.Read.MinSuccessTargets == 0 && !cfg.Probe.Read.HasExplicitMinSuccessTargets() {
 		cfg.Probe.Read.MinSuccessTargets = 1
