@@ -315,6 +315,35 @@ func TestAnalyzer_WarnsWhenCollectionRowCountIsPartial(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_LowersConfidenceWhenSkipChecksPresent(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:        "demo",
+				MilvusURI:   "127.0.0.1:19530",
+				Namespace:   "milvus",
+				ArchProfile: model.ArchProfileUnknown,
+				MQType:      "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Name: "k8s-pod-health", Status: model.CheckStatusSkip, Message: "arch_profile unknown, pod health check skipped"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultPASS {
+		t.Fatalf("Result = %s, want PASS", result.Result)
+	}
+	if result.Confidence != model.ConfidenceLow {
+		t.Fatalf("Confidence = %s, want low", result.Confidence)
+	}
+}
+
 func int64Ptr(v int64) *int64 {
 	return &v
 }
