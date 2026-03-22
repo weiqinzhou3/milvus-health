@@ -1,12 +1,13 @@
-# milvus-health Specification v1.2
+# milvus-health Specification v1.3
 
-> **变更说明（v1.1 → v1.2）**
+> **变更说明（v1.2 → v1.3）**
 >
-> 本版本基于红队评审结果修订：
+> 本版本基于生产交付场景修订 K8s 资源采集策略：
 >
-> 1. §12.5 FAIL 规则补充 `pod_restart_fail` 触发条件——原配置字段有定义但规则表中缺少对应 FAIL 项
-> 2. §22 目录结构文件名修正为 v1.2
-> 3. §24 当前版本结论更新
+> 1. §5.2 / §14 明确 **K8s 基础状态** 与 **动态资源使用率** 是两类不同事实：前者始终来自 Kubernetes API；后者是可配置、可降级能力，不再将 metrics-server 视为硬依赖
+> 2. §7 新增 `k8s.resource_usage.source` 配置，首版仅支持 `auto` / `metrics-api` / `disabled`，避免把外部 Prometheus 作为 P0 硬要求
+> 3. §14 / §20 明确 `metrics.k8s.io` 仅在选择 `auto` / `metrics-api` 时需要；若客户禁止 metrics-server，可通过 `disabled` 关闭动态 usage 采集而不影响基础健康检查
+> 4. §23 明确“直接抓取 Milvus 组件 metrics 端口”仅作为 **后续增强** 候选，且仅适用于 Milvus 原生组件，不构成 P0 通用 K8s pod usage 数据源
 
 ---
 
@@ -156,14 +157,23 @@ milvus-health check --config ./config.yaml | tee report.txt
   - indexed / unindexed vector field count
 
 #### C. K8s 基础健康
+**静态事实（P0 硬要求，始终采集）：**
 - Pod phase、Ready 状态、Restart count
 - 容器 waiting reason（最小要求：能识别 `CrashLoopBackOff`）
-- CPU 使用率、Memory 使用率（可获取时）
-- CPU request / limit、Memory request / limit（可获取时）
+- CPU request / limit、Memory request / limit（来自 PodSpec）
+- Service / Endpoint 基础信息
+
+**动态资源使用率（P0 可配置能力，允许降级）：**
+- CPU 使用率、Memory 使用率（仅在 `k8s.resource_usage.source != disabled` 且数据源可用时采集）
 - **CPU 使用率 / limit 占比**（`cpu_limit_ratio`，用于 WARN 判断，见 §12.6）
 - **Memory 使用率 / limit 占比**（`mem_limit_ratio`，用于 WARN 判断）
 - CPU 使用率 / request 占比、Memory 使用率 / request 占比（仅展示，不触发 WARN）
-- metrics 不可用原因（结构化，见 §14）
+- metrics/source 不可用原因（结构化，见 §14）
+
+**数据源约束：**
+- 首版通用 K8s pod usage 数据源仅定义为 Kubernetes Metrics API（`metrics.k8s.io`）
+- `metrics.k8s.io` 不是硬依赖；客户可通过配置关闭动态 usage 采集
+- 直接抓取 Milvus 组件 metrics 端口 **不作为首版通用 K8s usage 数据源**，见 §14.4
 
 #### D. 业务探测
 - Business Read Probe
@@ -305,6 +315,7 @@ milvus-health version
 | `cluster.milvus.token` | 否 | string | token（与 password 同时存在时 token 优先） |
 | `k8s.namespace` | 否 | string | K8s namespace |
 | `k8s.kubeconfig` | 否 | string | kubeconfig 路径 |
+| `k8s.resource_usage.source` | 否 | string | `auto`（默认）/ `metrics-api` / `disabled`；控制是否采集 Pod CPU/Memory usage |
 | `dependencies.mq.type` | 否 | string | `pulsar` / `kafka` / `woodpecker` / `unknown` |
 | `probe.read.targets` | 否 | list | 业务读探测目标列表 |
 | `probe.read.min_success_targets` | 否 | int | 最少成功目标数，默认 1 |
@@ -323,6 +334,10 @@ milvus-health version
 ### 7.2 配置约束
 - `cluster.milvus.uri` 格式必须为 `host:port`，不得携带 `tcp://`、`grpc://` 等 scheme 前缀；`validate` 检测到 scheme 前缀时返回 CONFIG_ERROR 并提示正确格式
 - `password` 与 `token` 同时存在时，token 优先，实现中必须固定此优先级并写入 README
+- `k8s.resource_usage.source` 仅允许：`auto` / `metrics-api` / `disabled`
+- `auto` 语义：优先尝试 `metrics.k8s.io`；若数据源不存在或权限不足，则按 §14 结构化降级
+- `metrics-api` 语义：强制尝试 `metrics.k8s.io`；不存在或权限不足时仍按 §14 降级，不得直接 FAIL
+- `disabled` 语义：不尝试动态 usage 采集，只输出静态 request/limit 与基础 Pod/Service/Endpoint 事实
 - `rules.resource_warn_ratio` 对应 **usage/limit** 占比，不是 usage/request 占比
 - `rules.pod_restart_fail` 须严格大于 `rules.pod_restart_warn`；两者都配置时 `Validator` 校验此约束
 
@@ -341,6 +356,8 @@ cluster:
 k8s:
   namespace: milvus
   kubeconfig: /home/admin/.kube/config
+  resource_usage:
+    source: auto
 
 dependencies:
   mq:
@@ -757,20 +774,59 @@ Failures
 
 ---
 
-## 14. Pod 资源采集失败的降级规则
+## 14. K8s 动态资源采集源与降级规则
 
-客户现场可能缺失 metrics-server 或权限不足，规则如下：
+### 14.1 基本原则
+
+`milvus-health` 对 K8s 相关事实做如下拆分：
+
+- **基础状态 / 静态规格**：来自 Kubernetes API（Pod/Service/Endpoint/PodSpec），包括 phase、ready、restart、requests、limits；这是 P0 硬要求，不依赖 metrics-server
+- **动态资源使用率**：指 CPUUsage / MemoryUsage 及各类 ratio；这是 **可配置、可降级** 能力，不得把任何单一数据源视为生产硬依赖
+
+### 14.2 首版支持的数据源
+
+首版仅定义以下 `k8s.resource_usage.source`：
+
+| 值 | 含义 |
+|---|---|
+| `auto` | 默认值；优先尝试 Kubernetes Metrics API（`metrics.k8s.io`），若不可用则结构化降级 |
+| `metrics-api` | 明确要求使用 `metrics.k8s.io`；若不可用仍结构化降级，不直接 FAIL |
+| `disabled` | 不采集动态 CPU/Memory usage，只保留基础状态与 requests/limits |
+
+**首版不把外部 Prometheus 作为 P0 硬依赖。** 若未来支持 Prometheus，必须额外配置地址、认证与查询口径，属于后续增强。
+
+### 14.3 降级规则
+
+当 `k8s.resource_usage.source=auto` 或 `metrics-api` 时：
 
 - Pod 列表与基础状态可获取，但 CPU / Memory 使用率**全部**无法获取：资源检查项状态为 `warn`
 - Pod 列表与基础状态可获取，部分 Pod 无法获取资源数据（**partial**）：
-  - 有 metrics 的 Pod 正常计算比例并触发 WARN 判断
-  - 无 metrics 的 Pod ratio 字段为 `null`（JSON），text 中显示 `unknown`
+  - 有 usage 的 Pod 正常计算比例并触发 WARN 判断
+  - 无 usage 的 Pod ratio 字段为 `null`（JSON），text 中显示 `unknown`
   - K8s Summary 显示 `partial (N/M pods have metrics)`
   - 整体不升级为 FAIL，但在 warnings 中说明缺少 metrics 的 Pod 数量与原因
-- 工具须区分两类失败原因：
+- 工具须至少区分以下原因：
   - `"metrics-server not found"`
   - `"insufficient permissions"`
+  - `"unknown"`
 - 若连 Pod 基础状态都无法获取 → K8s 检查为 `fail`
+
+当 `k8s.resource_usage.source=disabled` 时：
+
+- 不尝试调用动态 usage 数据源
+- 资源使用率检查项状态为 `skip`，message 明确为 `resource usage disabled by config`
+- 不得输出“install metrics-server”类 recommendation
+- requests/limits 仍应正常输出
+
+### 14.4 为什么首版不直接用 Milvus 组件 metrics 端口替代 K8s usage 数据源
+
+Milvus 原生支持通过组件 metrics 端口（通常 `:9091/metrics`）暴露 Prometheus 格式指标，这对**Milvus 组件自身运行状态**很有价值；但首版**不将其视为通用 K8s Pod CPU/Memory usage 数据源**，原因如下：
+
+1. 它只覆盖暴露该端口的 Milvus 原生组件，**不能天然覆盖** Attu、etcd、MinIO、Pulsar/Kafka 等依赖组件
+2. 组件 metrics 更偏**应用/进程指标**，不能天然替代 Kubernetes 维度的统一 Pod usage 口径
+3. requests/limits 仍必须来自 PodSpec，若 usage 源来自组件 metrics，会形成“混合口径”，需单独定义映射与误差边界
+4. 若未来引入该能力，也应作为 **P1 增强**：`component-metrics` 仅补充 Milvus 原生组件，不替代通用 K8s usage 源
+
 
 ---
 
@@ -898,7 +954,10 @@ rules:
     verbs: ["list", "get"]
 ```
 
-说明：`metrics.k8s.io` 权限仅在集群安装了 metrics-server 时生效；若无此权限，工具按 §14 降级规则处理。
+说明：
+- `metrics.k8s.io` 权限仅在 `k8s.resource_usage.source=auto` 或 `metrics-api` 时需要
+- 若客户不允许 metrics-server，可将 `k8s.resource_usage.source` 设为 `disabled`；此时工具仍执行基础 K8s 健康检查与静态规格采集
+- 若启用 `metrics.k8s.io` 但缺失权限或服务不存在，工具按 §14 结构化降级处理
 
 ---
 
@@ -974,17 +1033,19 @@ milvus-health/
 - 支持 etcd / MinIO / MQ 深度检查
 - 支持 markdown / HTML 报告导出
 - 支持 Prometheus 指标接入（获取 index 文件大小，补全 total storage）
+- 支持 **可选** 外部资源使用率来源（例如 Prometheus），但不作为首版硬依赖
+- 支持直接抓取 Milvus 组件 metrics 端口，作为 Milvus 原生组件的补充 usage 源（不替代通用 K8s usage 源）
 - Milvus 2.6.x Woodpecker 深度检查
 
 ---
 
 ## 24. 当前版本结论
 
-截至 v1.2，本文档在 v1.1 基础上完成了第三轮红队修订，核心补齐：
+截至 v1.3，本文档在 v1.2 基础上完成了 K8s 资源采集策略收口，核心补齐：
 
-1. **`pod_restart_fail` 规则闭合**：§12.5 FAIL 规则补充"restart count 达到 `pod_restart_fail` → FAIL"，消除配置字段有定义但规则表中缺失对应条款的矛盾
-2. **§7.1 字段说明更新**：`pod_restart_warn` / `pod_restart_fail` 的说明文字精确描述触发语义，并在约束中注明两者的大小关系
-3. **§12.4 `unmatched-role` 规则精确化**：明确该规则在 `arch_profile=unknown` 时不触发，避免所有 Pod 被误标为 Ignored
+1. **K8s 资源采集拆分为“静态规格”与“动态 usage”两层**：明确 requests/limits 属于 P0 硬要求，动态 CPU/Memory usage 属于可配置可降级能力
+2. **新增 `k8s.resource_usage.source`**：首版仅支持 `auto` / `metrics-api` / `disabled`，为生产环境禁用 metrics-server 的场景留出明确产品语义
+3. **明确 Milvus 组件 metrics 端口不是首版通用 K8s usage 数据源**：仅作为后续增强候选，避免首版设计把 Milvus 原生指标与 K8s 通用 pod usage 混为一谈
 
 ---
 

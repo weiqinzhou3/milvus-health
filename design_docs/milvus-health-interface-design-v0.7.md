@@ -1,15 +1,15 @@
-# milvus-health 接口设计文档 v0.6
+# milvus-health 接口设计文档 v0.7
 
 基于规格文档 `milvus-health Specification v1.2` 进行模块拆分与接口设计。
 
-> **变更说明（v0.5 → v0.6）**
+> **变更说明（v0.6 → v0.7）**
 >
-> 本版本基于红队评审结果修订：
+> 本版本基于生产交付场景修订 K8s 资源采集设计：
 >
-> 1. 补充三个缺失的 Go struct 定义：`CheckResult`、`DatabaseInventory`、`ProbeOutputView`（v0.5 中只被引用，未定义，导致编译报错）
-> 2. `shouldIgnore` 函数签名补充 `arch model.MilvusArchProfile` 参数——原签名拿不到 arch_profile，导致 `arch_profile=unknown` 时所有 Pod 误被标为 `unmatched-role`
-> 3. `Run` 伪代码修正 `goto analyze` 路径：Milvus 连接失败时也补齐被禁用模块的 skip CheckResult，保证 spec §6.1 "由 CheckRunner 统一补齐 skip" 在异常路径上同样兑现
-> 4. 文档版本号统一为 v0.6
+> 1. `K8sConfig` 新增 `ResourceUsageSource`，明确动态 usage 采集是可配置能力，不再把 `metrics.k8s.io` 视为硬依赖
+> 2. `K8sClient.ListPodMetrics` 语义增加“仅在 source 允许时调用”的约束；collector 必须区分 `disabled`、`metrics-server not found`、`insufficient permissions`
+> 3. `K8sStatus` / `PodStatus` 保持静态规格始终可采集，动态 usage 与 ratio 可降级为 unknown/null
+> 4. 明确“直接抓取 Milvus 组件 metrics 端口”不是 v0.7 首版通用 K8s usage 数据源，仅作为后续增强候选
 
 ---
 
@@ -29,6 +29,7 @@
 6. **渲染决策不进入分析层**：`Detail bool` 属于渲染决策；分析层 `Checks` 列表始终完整，渲染层通过 shadow struct 省略，不修改原始数据
 7. **platform 包无内部依赖**：不导入 `model` 包，类型映射由 collectors 层完成
 8. **collector 不做健康判定**：`arch_profile=unknown` 时，K8s collector 产出空 CheckResult，K8sAnalyzer 统一产出 skip
+9. **动态 usage 源可配置**：K8s 静态事实（Pod/Service/requests/limits）始终来自 apiserver；动态 CPU/Memory usage 是独立能力，可按 source 启用或关闭
 
 ---
 
@@ -212,8 +213,9 @@ type MilvusConfig struct {
 }
 
 type K8sConfig struct {
-    Namespace  string `yaml:"namespace"`
-    Kubeconfig string `yaml:"kubeconfig"`
+    Namespace           string `yaml:"namespace"`
+    Kubeconfig          string `yaml:"kubeconfig"`
+    ResourceUsageSource string `yaml:"resource_usage.source"` // auto | metrics-api | disabled
 }
 
 type DependenciesConfig struct {
@@ -257,6 +259,14 @@ type RulesConfig struct {
     ResourceWarnRatio      float64 `yaml:"resource_warn_ratio"`
     RequireProbeForStandby bool    `yaml:"require_probe_for_standby"`
 }
+
+// K8sResourceUsageSource 为动态 CPU/Memory usage 的来源策略
+type K8sResourceUsageSource string
+const (
+    K8sResourceUsageSourceAuto       K8sResourceUsageSource = "auto"
+    K8sResourceUsageSourceMetricsAPI K8sResourceUsageSource = "metrics-api"
+    K8sResourceUsageSourceDisabled   K8sResourceUsageSource = "disabled"
+)
 
 type OutputConfig struct {
     Format OutputFormat `yaml:"format"`
@@ -355,6 +365,7 @@ type VectorField struct {
 type K8sStatus struct {
     Namespace                 string                   `json:"namespace"`
     ArchProfile               MilvusArchProfile        `json:"arch_profile"`
+    ResourceUsageSource       K8sResourceUsageSource   `json:"resource_usage_source"`
     TotalPodCount             int                      `json:"total_pod_count"`
     ReadyPodCount             int                      `json:"ready_pod_count"`
     NotReadyPodCount          int                      `json:"not_ready_pod_count"`
@@ -653,11 +664,13 @@ type PlatformMetricsResult struct {
 type K8sClient interface {
     ListPods(ctx context.Context, namespace string) ([]PodInfo, error)
     ListServices(ctx context.Context, namespace string) ([]ServiceInfo, error)
-    // ListPodMetrics 返回语义：
+    // ListPodMetrics 仅在 ResourceUsageSource 为 auto / metrics-api 时调用。
+    // 返回语义：
     //   metrics-server 不存在（404/discovery 失败）→ (PlatformMetricsResult{Available:false, UnavailableReason:"metrics-server not found"}, nil)
     //   权限不足（403）→ (PlatformMetricsResult{Available:false, UnavailableReason:"insufficient permissions"}, nil)
     //   K8s API server 不可达 → (PlatformMetricsResult{}, error)
     //   成功 → (PlatformMetricsResult{Available:true, Metrics:[...]}, nil)
+    // 注意：v0.7 首版不通过 Milvus 组件 metrics 端口实现通用 Pod usage；该思路仅作为后续增强候选。
     ListPodMetrics(ctx context.Context, namespace string) (PlatformMetricsResult, error)
 }
 
@@ -711,6 +724,11 @@ type K8sCollector interface {
     //   collector 照常枚举 Pod/Service，填充 K8sStatus.Pods 基础事实字段
     //   返回空 CheckResult 列表（不产出任何 FAIL/WARN）
     //   K8sAnalyzer 统一产出 skip CheckResult
+    //
+    // ResourceUsageSource 语义：
+    //   disabled    -> 不调用 ListPodMetrics；仅采集静态 request/limit 与基础状态
+    //   auto        -> 尝试 ListPodMetrics；not found / forbidden 时结构化降级
+    //   metrics-api -> 明确要求 ListPodMetrics；not found / forbidden 时仍结构化降级，不直接 FAIL
     CollectStatus(ctx context.Context, cfg *model.Config, archProfile model.MilvusArchProfile) (model.K8sStatus, []model.CheckResult, error)
 }
 ```
@@ -735,6 +753,7 @@ func (c *DefaultK8sCollector) shouldIgnore(podInfo platform.PodInfo, role model.
 
 // mergeMetrics 合并 metrics，计算 ratio 字段
 // ratio 字段为 *float64，nil 时 JSON 输出 null（无 omitempty）
+// source=disabled 时不得调用本函数；collector 直接返回 ResourceUsageAvailable=false 且不产出 source-missing WARN
 func (c *DefaultK8sCollector) mergeMetrics(
     pods []model.PodStatus,
     result platform.PlatformMetricsResult,
