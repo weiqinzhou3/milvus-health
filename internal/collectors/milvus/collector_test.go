@@ -123,6 +123,58 @@ func TestCollector_CollectInventory(t *testing.T) {
 	}
 }
 
+func TestCollector_CollectInventory_ParsesReal247StyleBinlogMetrics(t *testing.T) {
+	t.Parallel()
+
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{
+				Databases: []string{"default"},
+				Collections: map[string][]string{
+					"default": {"book", "movie"},
+				},
+				CollectionIDs: map[string]map[string]int64{
+					"default": {"book": 451866866319598777, "movie": 451866866319598778},
+				},
+				RowCounts: map[string]map[string]int64{
+					"default": {"book": 10, "movie": 11},
+				},
+				MetricsByType: map[string]string{
+					"system_info": `{
+						"nodes_info":[
+							{
+								"infos":{
+									"quota_metrics":{
+										"TotalBinlogSize":"4509715660",
+										"CollectionBinlogSize":{
+											"451866866319598777":"2254857830",
+											"451866866319598778":"2254857830"
+										}
+									}
+								}
+							}
+						]
+					}`,
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.CollectInventory(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("CollectInventory() error = %v", err)
+	}
+	if inventory.TotalBinlogSizeBytes == nil || *inventory.TotalBinlogSizeBytes != 4509715660 {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want 4509715660", inventory.TotalBinlogSizeBytes)
+	}
+	if inventory.Collections[0].BinlogSizeBytes == nil || *inventory.Collections[0].BinlogSizeBytes != 2254857830 {
+		t.Fatalf("Collections[0].BinlogSizeBytes = %#v, want 2254857830", inventory.Collections[0].BinlogSizeBytes)
+	}
+	if inventory.Collections[1].BinlogSizeBytes == nil || *inventory.Collections[1].BinlogSizeBytes != 2254857830 {
+		t.Fatalf("Collections[1].BinlogSizeBytes = %#v, want 2254857830", inventory.Collections[1].BinlogSizeBytes)
+	}
+}
+
 func TestCollector_CollectClusterInfoReturnsAppErrorOnConnectFailure(t *testing.T) {
 	t.Parallel()
 

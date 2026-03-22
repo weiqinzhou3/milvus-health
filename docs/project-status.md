@@ -4,7 +4,7 @@ Last updated: 2026-03-22
 
 ## 1. Current conclusion
 
-The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, and **Iteration D1 / Milvus Binlog Size** on the real collection path.
+The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, **Iteration D1 / Milvus Binlog Size**, and **Iteration D1.1 / system_info parser compatibility** on the real collection path.
 
 This branch can now truthfully claim:
 
@@ -14,9 +14,10 @@ This branch can now truthfully claim:
 - real database names and per-database collection name lists are collected
 - real per-collection row count collection is wired through `GetCollectionStatistics`
 - real cluster total row count is reported when all collection row counts are available
-- real per-collection `binlog_size_bytes` is collected from Milvus `GetMetrics("system_info")` / DataCoord quota metrics
-- real cluster total `binlog_size_bytes` is collected from Milvus `GetMetrics("system_info")`
-- Milvus binlog size now degrades to `null` / `unknown` instead of failing the whole inventory when metrics collection is unavailable or partial
+- Milvus binlog size collection remains sourced from `GetMetrics("system_info")` / DataCoord quota metrics
+- D1 exposed a real Milvus 2.4.7 parser-compatibility gap: some `system_info` payloads report binlog metrics under `nodes_info[].infos.quota_metrics.TotalBinlogSize` / `CollectionBinlogSize`
+- D1.1 updates the parser to accept both snake_case fake-test payloads and the observed 2.4.7 nested/CamelCase payload shape
+- binlog size still degrades to `null` / `unknown` instead of failing the whole inventory when metrics collection fails or the payload cannot be parsed
 - real Kubernetes pod basic status collection is wired into `check`
 - real Kubernetes pod CPU/memory usage collection is wired into `check` when metrics-server is available
 - real Kubernetes pod CPU/memory request and limit collection is wired into `check`
@@ -28,11 +29,11 @@ This branch can now truthfully claim:
 - `mq_type` now has minimal reliable detection: explicit config is honored, `pulsar`/`kafka` can be inferred conservatively from K8s service names, and `rocksmq` is supported via explicit config or alias normalization
 - `check` text/json output is now driven by real Milvus facts when Milvus is reachable
 
-This branch still should **not** be treated as having full P0 coverage. Business read / RW probes, richer Milvus inventory metrics beyond row count and binlog size, Prometheus/component-metrics resource usage sources, and the full analyzer rule matrix are still out of scope or skeleton-only.
+This branch still should **not** be treated as having full P0 coverage. Business read / RW probes, richer Milvus inventory metrics beyond row count and binlog size, Prometheus/component-metrics resource usage sources, and the full analyzer rule matrix are still out of scope or skeleton-only. Binlog size should also not yet be described as universally stable beyond the currently validated payload shapes.
 
 ## 2. Stage assessment
 
-Current stage: **Stage 4 / Real Milvus inventory with row count and binlog size enrichment plus Kubernetes basic status and metrics/resource usage**
+Current stage: **Stage 4 / Real Milvus inventory with row count, binlog size, and D1.1 parser compatibility fixes plus Kubernetes basic status and metrics/resource usage**
 
 Suggested next stage target: **Stage 5 - Analyzer rule expansion**
 
@@ -60,7 +61,7 @@ Suggested stage sequence:
 | Analyzer | Minimal runtime path | Analyzer consumes collected Milvus and K8s facts, warns on partial row count, partial/unknown binlog size, pod not ready, restart_count > 0, metrics unavailable/partial, and usage/limit ratio threshold breaches; it is not yet a full P0 rules engine |
 | Milvus platform client | Minimally implemented | Real client methods for `GetVersion`, `ListDatabases`, `ListCollections`, collection ID lookup, per-collection row count, and `GetMetrics("system_info")` now exist |
 | Kubernetes platform client | Minimally implemented | Real client methods for `ListPods`, `ListServices`, `ListEndpoints`, and `ListPodMetrics` now exist, with spec-aligned metrics degrade semantics |
-| Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are real for version/database/collection inventory, row count enrichment, and `binlog_size_bytes` enrichment; `arch_profile` detection now accepts `v`-prefixed versions |
+| Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are real for version/database/collection inventory, row count enrichment, and `binlog_size_bytes` enrichment; D1.1 extends `system_info` parsing to the observed nested/CamelCase 2.4.7 payload shape; `arch_profile` detection now accepts `v`-prefixed versions |
 | Kubernetes collector | Minimally implemented | Real pod/service/endpoint inventory collection is wired through the check runner; pod metrics, request/limit enrichment, ratio calculation, and partial/unavailable metrics semantics are now included; NodePort service details are preserved in rendered port strings |
 | Probes | Placeholder only | Business Read / RW probe real logic is still not implemented |
 | Tests | Implemented for this slice | Platform tests, K8s collector tests, runner tests, renderer golden tests, analyzer tests, command/integration tests, and smoke tests cover the current slice |
@@ -78,6 +79,7 @@ Suggested stage sequence:
 - real total row count when all collection row counts are available
 - real per-collection collection ID lookup via `DescribeCollection`
 - real per-collection and total `binlog_size_bytes` via `GetMetrics("system_info")`
+- parser compatibility for both snake_case test payloads and the observed Milvus 2.4.7 nested/CamelCase `quota_metrics` payload shape
 - arch profile detection based on real version
 
 ### 4.2 Check runner orchestration
@@ -142,6 +144,7 @@ Suggested stage sequence:
 6. Flat legacy packages under `internal/platform` and `internal/collectors` still exist for compatibility; the new real paths are under `internal/platform/milvus`, `internal/platform/k8s`, `internal/collectors/milvus`, and `internal/collectors/k8s`.
 7. Business read probe and RW probe are still not implemented.
 8. Prometheus-backed or component-metrics-backed resource usage sources are still not implemented.
+9. Binlog size parsing is now compatible with the validated snake_case payload and the observed Milvus 2.4.7 nested/CamelCase payload, but it should not yet be described as broadly validated across all historical payload variants.
 
 ## 7. Validation status
 

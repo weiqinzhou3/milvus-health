@@ -228,25 +228,29 @@ func findBinlogMetrics(node any) (*binlogMetrics, bool) {
 }
 
 func parseBinlogMetricsObject(node map[string]any) (*binlogMetrics, bool) {
-	quotaMetrics, ok := node["quota_metrics"].(map[string]any)
-	if !ok {
-		return nil, false
+	quotaMetrics := node
+	if nestedQuotaMetrics, ok := getMapAnyAlias(node, "quota_metrics", "QuotaMetrics"); ok {
+		quotaMetrics = nestedQuotaMetrics
 	}
 
-	totalRaw, hasTotal := quotaMetrics["total_binlog_size"]
-	collectionRaw, hasCollections := quotaMetrics["collection_binlog_size"]
+	totalRaw, hasTotal := getAnyAlias(quotaMetrics, "total_binlog_size", "TotalBinlogSize")
+	collectionRaw, hasCollections := getAnyAlias(quotaMetrics, "collection_binlog_size", "CollectionBinlogSize")
 	if !hasTotal && !hasCollections {
 		return nil, false
 	}
 
-	total, err := parseJSONInt64(totalRaw)
-	if err != nil {
-		return nil, false
+	var total int64
+	var err error
+	if hasTotal {
+		total, err = parseJSONInt64(totalRaw)
+		if err != nil {
+			return nil, false
+		}
 	}
 
 	collectionMap := make(map[int64]int64)
 	if hasCollections {
-		items, ok := collectionRaw.(map[string]any)
+		items, ok := normalizeStringKeyMap(collectionRaw)
 		if !ok {
 			return nil, false
 		}
@@ -267,6 +271,34 @@ func parseBinlogMetricsObject(node map[string]any) (*binlogMetrics, bool) {
 		TotalBinlogSize:      total,
 		CollectionBinlogSize: collectionMap,
 	}, true
+}
+
+func getAnyAlias(node map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		value, ok := node[key]
+		if ok {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func getMapAnyAlias(node map[string]any, keys ...string) (map[string]any, bool) {
+	value, ok := getAnyAlias(node, keys...)
+	if !ok {
+		return nil, false
+	}
+	mapped, ok := normalizeStringKeyMap(value)
+	return mapped, ok
+}
+
+func normalizeStringKeyMap(value any) (map[string]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		return typed, true
+	default:
+		return nil, false
+	}
 }
 
 func parseJSONInt64(value any) (int64, error) {
