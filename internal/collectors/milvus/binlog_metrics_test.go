@@ -11,8 +11,8 @@ func TestParseBinlogMetrics_SnakeCasePayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseBinlogMetrics() error = %v", err)
 	}
-	if metrics.TotalBinlogSize != 2800 {
-		t.Fatalf("TotalBinlogSize = %d, want 2800", metrics.TotalBinlogSize)
+	if metrics.TotalBinlogSize == nil || *metrics.TotalBinlogSize != 2800 {
+		t.Fatalf("TotalBinlogSize = %#v, want 2800", metrics.TotalBinlogSize)
 	}
 	if got := metrics.CollectionBinlogSize[1002]; got != 1000 {
 		t.Fatalf("CollectionBinlogSize[1002] = %d, want 1000", got)
@@ -42,8 +42,8 @@ func TestParseBinlogMetrics_Real247NestedPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseBinlogMetrics() error = %v", err)
 	}
-	if metrics.TotalBinlogSize != 4509715660 {
-		t.Fatalf("TotalBinlogSize = %d, want 4509715660", metrics.TotalBinlogSize)
+	if metrics.TotalBinlogSize == nil || *metrics.TotalBinlogSize != 4509715660 {
+		t.Fatalf("TotalBinlogSize = %#v, want 4509715660", metrics.TotalBinlogSize)
 	}
 	if got := metrics.CollectionBinlogSize[451866866319598777]; got != 2254857830 {
 		t.Fatalf("CollectionBinlogSize[451866866319598777] = %d, want 2254857830", got)

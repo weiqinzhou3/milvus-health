@@ -80,15 +80,22 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 		})
 	}
 
-	if missingCollections := collectionsMissingBinlogSize(input.Inventory.Milvus); len(missingCollections) > 0 {
-		result.Warnings = append(result.Warnings, buildBinlogSizeWarning(missingCollections))
+	missingBinlogCollections := collectionsMissingBinlogSize(input.Inventory.Milvus)
+	totalBinlogMissing := totalBinlogSizeMissing(input.Inventory.Milvus)
+	if totalBinlogMissing || len(missingBinlogCollections) > 0 {
+		warning := buildBinlogSizeWarning(missingBinlogCollections, totalBinlogMissing)
+		var actual any
+		if len(missingBinlogCollections) > 0 {
+			actual = missingBinlogCollections
+		}
+		result.Warnings = append(result.Warnings, warning)
 		result.Checks = append(result.Checks, model.CheckResult{
 			Category:       "milvus",
 			Name:           "milvus-binlog-size",
 			Status:         model.CheckStatusWarn,
-			Message:        buildBinlogSizeWarning(missingCollections),
+			Message:        warning,
 			Recommendation: "verify GetMetrics(\"system_info\") availability and DataCoord quota metrics coverage",
-			Actual:         missingCollections,
+			Actual:         actual,
 		})
 	}
 
@@ -304,8 +311,19 @@ func collectionsMissingBinlogSize(inventory model.MilvusInventory) []string {
 	return missing
 }
 
-func buildBinlogSizeWarning(collections []string) string {
-	return "binlog size unavailable for: " + strings.Join(collections, ", ")
+func totalBinlogSizeMissing(inventory model.MilvusInventory) bool {
+	return inventory.CollectionCount > 0 && inventory.TotalBinlogSizeBytes == nil
+}
+
+func buildBinlogSizeWarning(collections []string, totalMissing bool) string {
+	switch {
+	case totalMissing && len(collections) > 0:
+		return "total binlog size unavailable; per-collection binlog size unavailable for: " + strings.Join(collections, ", ")
+	case totalMissing:
+		return "total binlog size unavailable"
+	default:
+		return "binlog size unavailable for: " + strings.Join(collections, ", ")
+	}
 }
 
 func normalizeElapsedMS(startedAt, endedAt time.Time) int64 {

@@ -484,6 +484,65 @@ func TestAnalyzer_WarnsWhenCollectionBinlogSizeIsPartial(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_WarnsWhenTotalBinlogSizeIsMissing(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			Milvus: model.MilvusInventory{
+				DatabaseCount:        1,
+				CollectionCount:      1,
+				TotalBinlogSizeBytes: nil,
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book"}},
+				},
+				Collections: []model.CollectionInventory{
+					{Database: "default", Name: "book", RowCount: int64Ptr(10), BinlogSizeBytes: int64Ptr(1000)},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.4.7",
+				ArchProfile:   model.ArchProfileV24,
+				MQType:        "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
+			{Name: "milvus-inventory", Status: model.CheckStatusPass, Message: "Milvus inventory collected successfully"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	if result.Summary.TotalBinlogSizeBytes != nil {
+		t.Fatalf("Summary.TotalBinlogSizeBytes = %#v, want nil", result.Summary.TotalBinlogSizeBytes)
+	}
+	foundWarning := false
+	foundCheck := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "total binlog size unavailable") {
+			foundWarning = true
+		}
+	}
+	for _, check := range result.Checks {
+		if check.Name == "milvus-binlog-size" && check.Status == model.CheckStatusWarn && strings.Contains(check.Message, "total binlog size unavailable") {
+			foundCheck = true
+		}
+	}
+	if !foundWarning || !foundCheck {
+		t.Fatalf("Warnings=%#v Checks=%#v", result.Warnings, result.Checks)
+	}
+}
+
 func TestAnalyzer_LowersConfidenceWhenSkipChecksPresent(t *testing.T) {
 	t.Parallel()
 

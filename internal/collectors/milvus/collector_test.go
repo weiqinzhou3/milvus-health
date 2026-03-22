@@ -175,6 +175,50 @@ func TestCollector_CollectInventory_ParsesReal247StyleBinlogMetrics(t *testing.T
 	}
 }
 
+func TestCollector_CollectInventory_DegradesWhenBinlogTotalMissingButCollectionMapPresent(t *testing.T) {
+	t.Parallel()
+
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{
+				Databases: []string{"default"},
+				Collections: map[string][]string{
+					"default": {"book"},
+				},
+				CollectionIDs: map[string]map[string]int64{
+					"default": {"book": 1001},
+				},
+				RowCounts: map[string]map[string]int64{
+					"default": {"book": 10},
+				},
+				MetricsByType: map[string]string{
+					"system_info": `{"quota_metrics":{"collection_binlog_size":{"1001":700}}}`,
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.CollectInventory(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("CollectInventory() error = %v", err)
+	}
+	if !inventory.CapabilityDegraded {
+		t.Fatal("CapabilityDegraded = false, want true")
+	}
+	if inventory.TotalBinlogSizeBytes != nil {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want nil", inventory.TotalBinlogSizeBytes)
+	}
+	if len(inventory.DegradedCapabilities) != 1 || inventory.DegradedCapabilities[0] != "binlog_size_total" {
+		t.Fatalf("DegradedCapabilities = %#v", inventory.DegradedCapabilities)
+	}
+	if inventory.Collections[0].BinlogSizeBytes == nil || *inventory.Collections[0].BinlogSizeBytes != 700 {
+		t.Fatalf("Collections[0].BinlogSizeBytes = %#v, want 700", inventory.Collections[0].BinlogSizeBytes)
+	}
+	if inventory.Collections[0].RowCount == nil || *inventory.Collections[0].RowCount != 10 {
+		t.Fatalf("RowCount = %#v, want 10", inventory.Collections[0].RowCount)
+	}
+}
+
 func TestCollector_CollectClusterInfoReturnsAppErrorOnConnectFailure(t *testing.T) {
 	t.Parallel()
 
@@ -227,6 +271,9 @@ func TestCollector_CollectInventory_DegradesWhenCollectionRowCountUnavailable(t 
 	}
 	if inventory.TotalRowCount != nil {
 		t.Fatalf("TotalRowCount = %#v, want nil", inventory.TotalRowCount)
+	}
+	if inventory.TotalBinlogSizeBytes == nil || *inventory.TotalBinlogSizeBytes != 1000 {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want 1000", inventory.TotalBinlogSizeBytes)
 	}
 	if len(inventory.DegradedCapabilities) != 2 || inventory.DegradedCapabilities[0] != "row_count:default.movie" {
 		t.Fatalf("DegradedCapabilities = %#v", inventory.DegradedCapabilities)

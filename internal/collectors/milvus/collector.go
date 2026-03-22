@@ -67,8 +67,11 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 	if binlogErr != nil {
 		inventory.CapabilityDegraded = true
 		inventory.DegradedCapabilities = appendUnique(inventory.DegradedCapabilities, "binlog_size")
+	} else if totalBinlogSize != nil {
+		inventory.TotalBinlogSizeBytes = totalBinlogSize
 	} else {
-		inventory.TotalBinlogSizeBytes = int64Ptr(totalBinlogSize)
+		inventory.CapabilityDegraded = true
+		inventory.DegradedCapabilities = appendUnique(inventory.DegradedCapabilities, "binlog_size_total")
 	}
 
 	var totalRowCount int64
@@ -134,15 +137,15 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 	return inventory, nil
 }
 
-func (c DefaultCollector) fetchBinlogSizes(ctx context.Context, client platformmilvus.Client) (map[int64]int64, int64, error) {
+func (c DefaultCollector) fetchBinlogSizes(ctx context.Context, client platformmilvus.Client) (map[int64]int64, *int64, error) {
 	response, err := client.GetMetrics(ctx, "system_info")
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
 	metrics, err := parseBinlogMetrics(response)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	return metrics.CollectionBinlogSize, metrics.TotalBinlogSize, nil
 }
@@ -189,7 +192,7 @@ func appendUnique(items []string, value string) []string {
 }
 
 type binlogMetrics struct {
-	TotalBinlogSize      int64
+	TotalBinlogSize      *int64
 	CollectionBinlogSize map[int64]int64
 }
 
@@ -239,13 +242,13 @@ func parseBinlogMetricsObject(node map[string]any) (*binlogMetrics, bool) {
 		return nil, false
 	}
 
-	var total int64
-	var err error
+	var total *int64
 	if hasTotal {
-		total, err = parseJSONInt64(totalRaw)
+		parsedTotal, err := parseJSONInt64(totalRaw)
 		if err != nil {
 			return nil, false
 		}
+		total = int64Ptr(parsedTotal)
 	}
 
 	collectionMap := make(map[int64]int64)
