@@ -129,7 +129,7 @@ func clusterInfoFromConfig(cfg *model.Config) model.ClusterInfo {
 		MilvusURI:   cfg.Cluster.Milvus.URI,
 		Namespace:   cfg.K8s.Namespace,
 		ArchProfile: model.ArchProfileUnknown,
-		MQType:      "unknown",
+		MQType:      model.NormalizeMQType(cfg.Dependencies.MQ.Type),
 	}
 }
 

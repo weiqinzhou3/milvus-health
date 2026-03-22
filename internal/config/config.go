@@ -80,6 +80,9 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 	} else if strings.Contains(cfg.Cluster.Milvus.URI, "://") {
 		fields = append(fields, FieldError{Field: "cluster.milvus.uri", Message: "must be host:port without scheme"})
 	}
+	if rawMQType := strings.TrimSpace(cfg.Dependencies.MQ.Type); rawMQType != "" && model.NormalizeMQType(rawMQType) == "unknown" {
+		fields = append(fields, FieldError{Field: "dependencies.mq.type", Message: "must be pulsar, kafka, rocksmq, unknown, or woodpecker"})
+	}
 	switch cfg.Output.Format {
 	case model.OutputFormatText, model.OutputFormatJSON:
 	default:

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	collectork8s "github.com/weiqinzhou3/milvus-health/internal/collectors/k8s"
@@ -201,6 +202,39 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 		}
 	}
 
+	input.Snapshot.Cluster.MQType = resolveMQType(input.Snapshot.Cluster.MQType, cfg, input.Inventory.K8s)
 	input.EndedAt = time.Now()
 	return r.Analyzer.Analyze(ctx, input)
+}
+
+func resolveMQType(current string, cfg *model.Config, k8sInventory model.K8sInventory) string {
+	if mqType := model.NormalizeMQType(current); mqType != "unknown" {
+		return mqType
+	}
+	if cfg != nil {
+		if mqType := model.NormalizeMQType(cfg.Dependencies.MQ.Type); mqType != "unknown" {
+			return mqType
+		}
+	}
+
+	hasPulsar := false
+	hasKafka := false
+	for _, service := range k8sInventory.Services {
+		name := strings.ToLower(service.Name)
+		if strings.Contains(name, "pulsar") {
+			hasPulsar = true
+		}
+		if strings.Contains(name, "kafka") {
+			hasKafka = true
+		}
+	}
+
+	switch {
+	case hasPulsar && !hasKafka:
+		return "pulsar"
+	case hasKafka && !hasPulsar:
+		return "kafka"
+	default:
+		return "unknown"
+	}
 }

@@ -69,10 +69,10 @@
       ],
       "services": [
         {
-          "name": "milvus",
-          "type": "ClusterIP",
+          "name": "attu",
+          "type": "NodePort",
           "ports": [
-            "19530/tcp"
+            "3000:30031/tcp"
           ]
         }
       ],

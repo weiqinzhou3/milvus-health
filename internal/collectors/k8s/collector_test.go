@@ -17,7 +17,7 @@ func TestCollector_ReturnsInventory_FromFakeClient(t *testing.T) {
 		Factory: platformk8s.FakeClientFactory{
 			Client: &platformk8s.FakeClient{
 				Pods:      []platformk8s.Pod{{Name: "milvus-0", Phase: "Running", Ready: true, RestartCount: 1}},
-				Services:  []platformk8s.Service{{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}}},
+				Services:  []platformk8s.Service{{Name: "attu", Type: "NodePort", Ports: []string{"3000:30031/tcp"}}},
 				Endpoints: []platformk8s.Endpoint{{Name: "milvus-abc", Addresses: []string{"10.0.0.1"}}},
 			},
 		},
@@ -30,7 +30,7 @@ func TestCollector_ReturnsInventory_FromFakeClient(t *testing.T) {
 	if len(inventory.Pods) != 1 || inventory.Pods[0].Name != "milvus-0" {
 		t.Fatalf("Pods = %#v", inventory.Pods)
 	}
-	if len(inventory.Services) != 1 || inventory.Services[0].Name != "milvus" {
+	if len(inventory.Services) != 1 || inventory.Services[0].Name != "attu" || inventory.Services[0].Ports[0] != "3000:30031/tcp" {
 		t.Fatalf("Services = %#v", inventory.Services)
 	}
 	if len(inventory.Endpoints) != 1 || inventory.Endpoints[0].Name != "milvus-abc" {

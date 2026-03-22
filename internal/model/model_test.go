@@ -14,6 +14,8 @@ func TestDetectArchProfile(t *testing.T) {
 		version string
 		want    model.MilvusArchProfile
 	}{
+		{name: "v2.4.7 -> v2.4", version: "v2.4.7", want: model.ArchProfileV24},
+		{name: "v2.6.1 -> v2.6", version: "v2.6.1", want: model.ArchProfileV26},
 		{name: "2.4.7 -> v2.4", version: "2.4.7", want: model.ArchProfileV24},
 		{name: "2.5.3 -> v2.4", version: "2.5.3", want: model.ArchProfileV24},
 		{name: "2.6.0 -> v2.6", version: "2.6.0", want: model.ArchProfileV26},
@@ -31,6 +33,33 @@ func TestDetectArchProfile(t *testing.T) {
 			t.Parallel()
 			if got := model.DetectArchProfile(tt.version); got != tt.want {
 				t.Fatalf("DetectArchProfile(%q) = %q, want %q", tt.version, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeMQType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "pulsar", input: "pulsar", want: "pulsar"},
+		{name: "kafka", input: "Kafka", want: "kafka"},
+		{name: "rocksmq", input: "rocksmq", want: "rocksmq"},
+		{name: "woodpecker alias", input: "woodpecker", want: "rocksmq"},
+		{name: "blank", input: "", want: "unknown"},
+		{name: "invalid", input: "rabbitmq", want: "unknown"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := model.NormalizeMQType(tt.input); got != tt.want {
+				t.Fatalf("NormalizeMQType(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
