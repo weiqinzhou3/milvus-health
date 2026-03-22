@@ -38,10 +38,11 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	fmt.Fprintf(&b, "Standby: %t\n", result.Standby)
 	fmt.Fprintf(&b, "Confidence: %s\n", result.Confidence)
 	fmt.Fprintf(&b, "Exit Code: %d\n", result.ExitCode)
-	fmt.Fprintf(&b, "Summary: databases=%d collections=%d total_rows=%s pods=%d\n",
+	fmt.Fprintf(&b, "Summary: databases=%d collections=%d total_rows=%s total_binlog_size_bytes=%s pods=%d\n",
 		result.Summary.DatabaseCount,
 		result.Summary.CollectionCount,
 		displayInt64(result.Summary.TotalRowCount),
+		displayInt64(result.Summary.TotalBinlogSizeBytes),
 		result.Summary.PodCount,
 	)
 	fmt.Fprintf(&b, "K8s Summary: ready=%d not_ready=%d services=%d endpoints=%d resource_usage=%s\n",
@@ -62,17 +63,18 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	}
 	if opts.Detail && result.Inventory != nil {
 		if result.Inventory.Milvus.ServerVersion != "" || result.Inventory.Milvus.DatabaseCount > 0 || result.Inventory.Milvus.CollectionCount > 0 {
-			fmt.Fprintf(&b, "Inventory: milvus_version=%s databases=%d collections=%d total_rows=%s\n",
+			fmt.Fprintf(&b, "Inventory: milvus_version=%s databases=%d collections=%d total_rows=%s total_binlog_size_bytes=%s\n",
 				displayString(result.Inventory.Milvus.ServerVersion, "unknown"),
 				result.Inventory.Milvus.DatabaseCount,
 				result.Inventory.Milvus.CollectionCount,
 				displayInt64(result.Inventory.Milvus.TotalRowCount),
+				displayInt64(result.Inventory.Milvus.TotalBinlogSizeBytes),
 			)
 		}
 		if len(result.Inventory.Milvus.Collections) > 0 {
 			b.WriteString("Collection Detail:\n")
 			for _, collection := range result.Inventory.Milvus.Collections {
-				fmt.Fprintf(&b, "- %s.%s: row_count=%s\n", collection.Database, collection.Name, displayInt64(collection.RowCount))
+				fmt.Fprintf(&b, "- %s.%s: row_count=%s binlog_size_bytes=%s\n", collection.Database, collection.Name, displayInt64(collection.RowCount), displayInt64(collection.BinlogSizeBytes))
 			}
 		}
 		if result.Inventory.K8s.Namespace != "" || len(result.Inventory.K8s.Pods) > 0 {

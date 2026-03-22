@@ -43,6 +43,7 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			DatabaseCount:            input.Inventory.Milvus.DatabaseCount,
 			CollectionCount:          input.Inventory.Milvus.CollectionCount,
 			TotalRowCount:            input.Inventory.Milvus.TotalRowCount,
+			TotalBinlogSizeBytes:     input.Inventory.Milvus.TotalBinlogSizeBytes,
 			PodCount:                 input.Inventory.K8s.TotalPodCount,
 			ReadyPodCount:            input.Inventory.K8s.ReadyPodCount,
 			NotReadyPodCount:         input.Inventory.K8s.NotReadyPodCount,
@@ -75,6 +76,18 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			Status:         model.CheckStatusWarn,
 			Message:        buildRowCountWarning(missingCollections),
 			Recommendation: "verify GetCollectionStatistics availability for the affected collections",
+			Actual:         missingCollections,
+		})
+	}
+
+	if missingCollections := collectionsMissingBinlogSize(input.Inventory.Milvus); len(missingCollections) > 0 {
+		result.Warnings = append(result.Warnings, buildBinlogSizeWarning(missingCollections))
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "milvus",
+			Name:           "milvus-binlog-size",
+			Status:         model.CheckStatusWarn,
+			Message:        buildBinlogSizeWarning(missingCollections),
+			Recommendation: "verify GetMetrics(\"system_info\") availability and DataCoord quota metrics coverage",
 			Actual:         missingCollections,
 		})
 	}
@@ -246,6 +259,7 @@ func hasMilvusFacts(inventory model.MilvusInventory) bool {
 		inventory.DatabaseCount > 0 ||
 		inventory.CollectionCount > 0 ||
 		inventory.TotalRowCount != nil ||
+		inventory.TotalBinlogSizeBytes != nil ||
 		len(inventory.Collections) > 0 ||
 		len(inventory.Databases) > 0 ||
 		len(inventory.DatabaseNames) > 0
@@ -274,6 +288,24 @@ func collectionsMissingRowCount(inventory model.MilvusInventory) []string {
 
 func buildRowCountWarning(collections []string) string {
 	return "row count unavailable for: " + strings.Join(collections, ", ")
+}
+
+func collectionsMissingBinlogSize(inventory model.MilvusInventory) []string {
+	if len(inventory.Collections) == 0 {
+		return nil
+	}
+
+	missing := make([]string, 0)
+	for _, collection := range inventory.Collections {
+		if collection.BinlogSizeBytes == nil {
+			missing = append(missing, collection.Database+"."+collection.Name)
+		}
+	}
+	return missing
+}
+
+func buildBinlogSizeWarning(collections []string) string {
+	return "binlog size unavailable for: " + strings.Join(collections, ", ")
 }
 
 func normalizeElapsedMS(startedAt, endedAt time.Time) int64 {

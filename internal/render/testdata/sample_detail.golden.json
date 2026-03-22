@@ -16,6 +16,7 @@
     "database_count": 1,
     "collection_count": 1,
     "total_row_count": 123,
+    "total_binlog_size_bytes": 4567,
     "pod_count": 2,
     "ready_pod_count": 1,
     "not_ready_pod_count": 1,
@@ -44,6 +45,7 @@
       "database_count": 1,
       "collection_count": 1,
       "total_row_count": 123,
+      "total_binlog_size_bytes": 4567,
       "databases": [
         {
           "name": "default",
@@ -56,7 +58,9 @@
         {
           "database": "default",
           "name": "book",
-          "row_count": 123
+          "collection_id": 1001,
+          "row_count": 123,
+          "binlog_size_bytes": 4567
         }
       ]
     },

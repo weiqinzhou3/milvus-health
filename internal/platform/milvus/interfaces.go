@@ -16,7 +16,9 @@ type Client interface {
 	GetVersion(ctx context.Context) (string, error)
 	ListDatabases(ctx context.Context) ([]string, error)
 	ListCollections(ctx context.Context, database string) ([]string, error)
+	GetCollectionID(ctx context.Context, database, collection string) (int64, error)
 	GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error)
+	GetMetrics(ctx context.Context, metricType string) (string, error)
 	Close(ctx context.Context) error
 }
 
