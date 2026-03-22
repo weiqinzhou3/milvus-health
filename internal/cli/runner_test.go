@@ -7,6 +7,7 @@ import (
 
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/probes"
 )
 
 type fakeLoader struct {
@@ -66,6 +67,18 @@ type fakeK8sCollector struct {
 	err       error
 }
 
+type fakeReadProbe struct {
+	result model.BusinessReadProbeResult
+	err    error
+	scope  probes.ProbeScope
+}
+
+type fakeRWProbe struct {
+	result model.RWProbeResult
+	err    error
+	calls  int
+}
+
 func (f fakeMilvusCollector) CollectClusterInfo(ctx context.Context, cfg *model.Config) (model.ClusterInfo, error) {
 	_ = ctx
 	_ = cfg
@@ -82,6 +95,20 @@ func (f fakeK8sCollector) Collect(ctx context.Context, cfg *model.Config) (model
 	_ = ctx
 	_ = cfg
 	return f.inventory, f.err
+}
+
+func (f *fakeReadProbe) Run(ctx context.Context, cfg *model.Config, scope probes.ProbeScope) (model.BusinessReadProbeResult, error) {
+	_ = ctx
+	_ = cfg
+	f.scope = scope
+	return f.result, f.err
+}
+
+func (f *fakeRWProbe) Run(ctx context.Context, cfg *model.Config) (model.RWProbeResult, error) {
+	_ = ctx
+	_ = cfg
+	f.calls++
+	return f.result, f.err
 }
 
 func TestValidateRunner_Run_ReturnsNil_ForValidConfig(t *testing.T) {
@@ -266,6 +293,84 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 	}
 	if len(got.Checks) != 4 {
 		t.Fatalf("Checks = %#v, want 4 checks", got.Checks)
+	}
+}
+
+func TestCheckRunner_PassesBusinessReadProbeResultToAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	readProbe := &fakeReadProbe{
+		result: model.BusinessReadProbeResult{
+			Status:            model.CheckStatusPass,
+			ConfiguredTargets: 1,
+			SuccessfulTargets: 1,
+			MinSuccessTargets: 1,
+			Message:           "1/1 read probe targets succeeded",
+		},
+	}
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{Name: "demo", MilvusURI: "127.0.0.1:19530", Namespace: "milvus", MilvusVersion: "2.6.1", ArchProfile: model.ArchProfileV26},
+			inventory:   model.MilvusInventory{DatabaseCount: 1, CollectionCount: 1},
+		},
+		K8sCollector: fakeK8sCollector{},
+		ReadProbe:    readProbe,
+		RWProbe: &fakeRWProbe{
+			result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe not implemented in this iteration"},
+		},
+		Analyzer: analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml", Database: "default", Collection: "book"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if analyzer.input.Snapshot.BusinessReadProbe.Status != model.CheckStatusPass {
+		t.Fatalf("BusinessReadProbe = %#v", analyzer.input.Snapshot.BusinessReadProbe)
+	}
+	if readProbe.scope.Database != "default" || readProbe.scope.Collection != "book" {
+		t.Fatalf("scope = %#v", readProbe.scope)
+	}
+}
+
+func TestCheckRunner_DoesNotRunRWProbeWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	rwProbe := &fakeRWProbe{
+		result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe not implemented in this iteration"},
+	}
+	runner := cli.DefaultCheckRunner{
+		Loader: fakeLoader{cfg: &model.Config{
+			Probe: model.ProbeConfig{
+				RW: model.RWProbeConfig{Enabled: false},
+			},
+		}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{Name: "demo", MilvusURI: "127.0.0.1:19530", Namespace: "milvus", MilvusVersion: "2.6.1", ArchProfile: model.ArchProfileV26},
+		},
+		K8sCollector: fakeK8sCollector{},
+		RWProbe:      rwProbe,
+		Analyzer:     analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if rwProbe.calls != 0 {
+		t.Fatalf("RWProbe.Run() calls = %d, want 0", rwProbe.calls)
+	}
+	if analyzer.input.Snapshot.RWProbe.Status != model.CheckStatusSkip || analyzer.input.Snapshot.RWProbe.Enabled {
+		t.Fatalf("Snapshot.RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
 	}
 }
 

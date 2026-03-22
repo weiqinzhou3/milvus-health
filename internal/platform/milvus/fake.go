@@ -6,19 +6,29 @@ import (
 )
 
 type FakeClient struct {
-	Version          string
-	VersionErr       error
-	Databases        []string
-	DatabasesErr     error
-	Collections      map[string][]string
-	CollectionErrs   map[string]error
-	CollectionIDs    map[string]map[string]int64
-	CollectionIDErrs map[string]map[string]error
-	RowCounts        map[string]map[string]int64
-	RowCountErrs     map[string]map[string]error
-	MetricsByType    map[string]string
-	MetricsErrs      map[string]error
-	Closed           bool
+	Version           string
+	VersionErr        error
+	Databases         []string
+	DatabasesErr      error
+	Collections       map[string][]string
+	CollectionErrs    map[string]error
+	CollectionIDs     map[string]map[string]int64
+	CollectionIDErrs  map[string]map[string]error
+	RowCounts         map[string]map[string]int64
+	RowCountErrs      map[string]map[string]error
+	Descriptions      map[string]map[string]CollectionDescription
+	DescriptionErrs   map[string]map[string]error
+	LoadStates        map[string]map[string]LoadState
+	LoadStateErrs     map[string]map[string]error
+	QueryResults      map[string]map[string]QueryResult
+	QueryErrs         map[string]map[string]error
+	SearchResults     map[string]map[string]SearchResult
+	SearchErrs        map[string]map[string]error
+	LastQueryRequest  QueryRequest
+	LastSearchRequest SearchRequest
+	MetricsByType     map[string]string
+	MetricsErrs       map[string]error
+	Closed            bool
 }
 
 func (f *FakeClient) GetVersion(ctx context.Context) (string, error) {
@@ -53,6 +63,43 @@ func (f *FakeClient) GetCollectionID(ctx context.Context, database, collection s
 		return 0, err
 	}
 	return f.CollectionIDs[database][collection], nil
+}
+
+func (f *FakeClient) DescribeCollection(ctx context.Context, database, collection string) (CollectionDescription, error) {
+	_ = ctx
+	if err := f.DescriptionErrs[database][collection]; err != nil {
+		return CollectionDescription{}, err
+	}
+	return f.Descriptions[database][collection], nil
+}
+
+func (f *FakeClient) GetCollectionLoadState(ctx context.Context, database, collection string) (LoadState, error) {
+	_ = ctx
+	if err := f.LoadStateErrs[database][collection]; err != nil {
+		return LoadStateUnknown, err
+	}
+	if state, ok := f.LoadStates[database][collection]; ok {
+		return state, nil
+	}
+	return LoadStateUnknown, nil
+}
+
+func (f *FakeClient) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
+	_ = ctx
+	f.LastQueryRequest = req
+	if err := f.QueryErrs[req.Database][req.Collection]; err != nil {
+		return QueryResult{}, err
+	}
+	return f.QueryResults[req.Database][req.Collection], nil
+}
+
+func (f *FakeClient) Search(ctx context.Context, req SearchRequest) (SearchResult, error) {
+	_ = ctx
+	f.LastSearchRequest = req
+	if err := f.SearchErrs[req.Database][req.Collection]; err != nil {
+		return SearchResult{}, err
+	}
+	return f.SearchResults[req.Database][req.Collection], nil
 }
 
 func (f *FakeClient) GetMetrics(ctx context.Context, metricType string) (string, error) {

@@ -10,6 +10,7 @@ Confidence: medium
 Exit Code: 1
 Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2
 K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)
+Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded
 Databases: default(book)
 Inventory: milvus_version=2.6.1 databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567
 Collection Detail:
@@ -22,6 +23,8 @@ Service Detail:
 - attu: type=NodePort ports=3000:30031/tcp
 Endpoint Detail:
 - milvus: addresses=10.0.0.1
+Business Read Probe Targets:
+- default.book: action=query success=true duration_ms=12 row_count=123
 Checks:
 - stub-check [warn]: stub
   Recommendation: inspect fake pipeline

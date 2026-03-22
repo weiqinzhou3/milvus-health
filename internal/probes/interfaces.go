@@ -1,11 +1,20 @@
 package probes
 
-import "context"
+import (
+	"context"
+
+	"github.com/weiqinzhou3/milvus-health/internal/model"
+)
+
+type ProbeScope struct {
+	Database   string
+	Collection string
+}
 
 type BusinessReadProbe interface {
-	Ping(ctx context.Context) error
+	Run(ctx context.Context, cfg *model.Config, scope ProbeScope) (model.BusinessReadProbeResult, error)
 }
 
 type RWProbe interface {
-	Ping(ctx context.Context) error
+	Run(ctx context.Context, cfg *model.Config) (model.RWProbeResult, error)
 }

@@ -9,6 +9,7 @@ import (
 	collectormilvus "github.com/weiqinzhou3/milvus-health/internal/collectors/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/config"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/probes"
 )
 
 type DefaultCheckRunner struct {
@@ -18,6 +19,8 @@ type DefaultCheckRunner struct {
 	OverrideApplier config.OverrideApplier
 	MilvusCollector collectormilvus.Collector
 	K8sCollector    collectork8s.Collector
+	ReadProbe       probes.BusinessReadProbe
+	RWProbe         probes.RWProbe
 	Analyzer        Analyzer
 }
 
@@ -54,6 +57,16 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				Namespace:   cfg.K8s.Namespace,
 				ArchProfile: model.ArchProfileUnknown,
 				MQType:      "unknown",
+			},
+			BusinessReadProbe: model.BusinessReadProbeResult{
+				Status:            model.CheckStatusSkip,
+				MinSuccessTargets: cfg.Probe.Read.MinSuccessTargets,
+				Message:           "not configured",
+			},
+			RWProbe: model.RWProbeResult{
+				Status:  model.CheckStatusSkip,
+				Enabled: cfg.Probe.RW.Enabled,
+				Message: "rw probe not implemented in this iteration",
 			},
 		},
 		StartedAt: startedAt,
@@ -157,6 +170,24 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 						"collection_count": inventory.CollectionCount,
 					},
 				})
+			}
+
+			if r.ReadProbe != nil {
+				probeResult, probeErr := r.ReadProbe.Run(ctx, cfg, probes.ProbeScope{
+					Database:   opts.Database,
+					Collection: opts.Collection,
+				})
+				input.Snapshot.BusinessReadProbe = probeResult
+				if probeErr != nil {
+					input.Failures = append(input.Failures, probeErr.Error())
+				}
+			}
+			if r.RWProbe != nil && cfg.Probe.RW.Enabled {
+				rwResult, rwErr := r.RWProbe.Run(ctx, cfg)
+				input.Snapshot.RWProbe = rwResult
+				if rwErr != nil {
+					input.Failures = append(input.Failures, rwErr.Error())
+				}
 			}
 		}
 	}

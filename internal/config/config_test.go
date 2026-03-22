@@ -124,6 +124,23 @@ func TestDefaultValueApplier_Apply_PreservesExplicitPositiveMinSuccessTargets(t 
 	}
 }
 
+func TestDefaultValueApplier_Apply_DefaultsReadProbeQueryExprAndTopK(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.Targets[0].QueryExpr = ""
+	cfg.Probe.Read.Targets[0].TopK = 0
+
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	if cfg.Probe.Read.Targets[0].QueryExpr != "id >= 0" {
+		t.Fatalf("Probe.Read.Targets[0].QueryExpr = %q, want %q", cfg.Probe.Read.Targets[0].QueryExpr, "id >= 0")
+	}
+	if cfg.Probe.Read.Targets[0].TopK != 3 {
+		t.Fatalf("Probe.Read.Targets[0].TopK = %d, want 3", cfg.Probe.Read.Targets[0].TopK)
+	}
+}
+
 func TestDefaultValueApplier_Apply_DefaultsResourceWarnRatioWhenUnset(t *testing.T) {
 	t.Parallel()
 
@@ -237,6 +254,19 @@ func TestConfigValidator_Validate_Fail_WhenMinSuccessTargetsNegative(t *testing.
 		t.Fatal("Validate() expected error")
 	}
 	assertHasFieldError(t, err, "probe.read.min_success_targets")
+}
+
+func TestConfigValidator_Validate_Fail_WhenReadProbeTopKNegative(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.Targets[0].TopK = -1
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "probe.read.targets[0].topk")
 }
 
 func TestConfigValidator_Validate_Fail_WhenURIHasScheme_FieldReported(t *testing.T) {

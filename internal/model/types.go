@@ -48,6 +48,14 @@ const (
 	MetricsUnavailableReasonUnknown          MetricsUnavailableReason = "unknown"
 )
 
+type ProbeAction string
+
+const (
+	ProbeActionDescribeFailed ProbeAction = "describe-failed"
+	ProbeActionQuery          ProbeAction = "query"
+	ProbeActionQueryAndSearch ProbeAction = "query+search"
+)
+
 type MilvusArchProfile string
 
 const (
@@ -243,7 +251,8 @@ type RWProbeConfig struct {
 }
 
 type RulesConfig struct {
-	ResourceWarnRatio float64 `yaml:"resource_warn_ratio"`
+	ResourceWarnRatio      float64 `yaml:"resource_warn_ratio"`
+	RequireProbeForStandby bool    `yaml:"require_probe_for_standby"`
 }
 
 type OutputConfig struct {
@@ -374,11 +383,22 @@ type EndpointInventory struct {
 }
 
 type BusinessReadProbeResult struct {
-	Status            CheckStatus `json:"status"`
-	ConfiguredTargets int         `json:"configured_targets"`
-	SuccessfulTargets int         `json:"successful_targets"`
-	MinSuccessTargets int         `json:"min_success_targets"`
-	Message           string      `json:"message"`
+	Status            CheckStatus                `json:"status"`
+	ConfiguredTargets int                        `json:"configured_targets"`
+	SuccessfulTargets int                        `json:"successful_targets"`
+	MinSuccessTargets int                        `json:"min_success_targets"`
+	Message           string                     `json:"message"`
+	Targets           []BusinessReadTargetResult `json:"targets,omitempty"`
+}
+
+type BusinessReadTargetResult struct {
+	Database   string      `json:"database"`
+	Collection string      `json:"collection"`
+	Action     ProbeAction `json:"action"`
+	Success    bool        `json:"success"`
+	DurationMS int64       `json:"duration_ms"`
+	Error      string      `json:"error,omitempty"`
+	RowCount   *int64      `json:"row_count,omitempty"`
 }
 
 type RWProbeResult struct {
@@ -421,9 +441,11 @@ type AnalysisResult struct {
 }
 
 type MetadataSnapshot struct {
-	Cluster ClusterInfo     `json:"cluster"`
-	Milvus  MilvusInventory `json:"milvus"`
-	K8s     K8sInventory    `json:"k8s"`
+	Cluster           ClusterInfo             `json:"cluster"`
+	Milvus            MilvusInventory         `json:"milvus"`
+	K8s               K8sInventory            `json:"k8s"`
+	BusinessReadProbe BusinessReadProbeResult `json:"business_read_probe"`
+	RWProbe           RWProbeResult           `json:"rw_probe"`
 }
 
 type AnalyzeInput struct {
