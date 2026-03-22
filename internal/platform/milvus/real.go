@@ -11,6 +11,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus/client/v2/entity"
 	milvussdk "github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/milvus-io/milvus/pkg/util/commonpbutil"
 	"github.com/milvus-io/milvus/pkg/util/crypto"
@@ -125,13 +126,21 @@ func (c *sdkClient) GetCollectionRowCount(ctx context.Context, database, collect
 }
 
 func (c *sdkClient) GetCollectionID(ctx context.Context, database, collection string) (int64, error) {
+	description, err := c.DescribeCollection(ctx, database, collection)
+	if err != nil {
+		return 0, err
+	}
+	return description.ID, nil
+}
+
+func (c *sdkClient) DescribeCollection(ctx context.Context, database, collection string) (CollectionDescription, error) {
 	client := c.client
 	closer := func(context.Context) error { return nil }
 
 	if database != "" {
 		scopedClient, err := c.newScopedClient(ctx, database)
 		if err != nil {
-			return 0, err
+			return CollectionDescription{}, err
 		}
 		client = scopedClient
 		closer = scopedClient.Close
@@ -143,9 +152,125 @@ func (c *sdkClient) GetCollectionID(ctx context.Context, database, collection st
 
 	description, err := client.DescribeCollection(callCtx, milvussdk.NewDescribeCollectionOption(collection))
 	if err != nil {
-		return 0, err
+		return CollectionDescription{}, err
 	}
-	return description.ID, nil
+
+	result := CollectionDescription{
+		ID:   description.ID,
+		Name: description.Name,
+	}
+	for _, field := range description.Schema.Fields {
+		item := CollectionField{
+			Name:         field.Name,
+			DataType:     field.DataType.Name(),
+			IsPrimaryKey: field.PrimaryKey,
+		}
+		switch field.DataType {
+		case entity.FieldTypeFloatVector, entity.FieldTypeBinaryVector, entity.FieldTypeFloat16Vector, entity.FieldTypeBFloat16Vector, entity.FieldTypeSparseVector:
+			item.IsVector = true
+			dim, err := field.GetDim()
+			if err == nil {
+				item.Dimension = dim
+			}
+		}
+		result.Fields = append(result.Fields, item)
+	}
+	return result, nil
+}
+
+func (c *sdkClient) GetCollectionLoadState(ctx context.Context, database, collection string) (LoadState, error) {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return LoadStateUnknown, err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	state, err := client.GetLoadState(callCtx, milvussdk.NewGetLoadStateOption(collection))
+	if err != nil {
+		return LoadStateUnknown, err
+	}
+
+	switch state.State {
+	case entity.LoadStateLoaded:
+		return LoadStateLoaded, nil
+	case entity.LoadStateLoading:
+		return LoadStateLoading, nil
+	case entity.LoadStateNotLoad, entity.LoadStateUnloading:
+		return LoadStateNotLoad, nil
+	default:
+		return LoadStateUnknown, nil
+	}
+}
+
+func (c *sdkClient) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if req.Database != "" {
+		scopedClient, err := c.newScopedClient(ctx, req.Database)
+		if err != nil {
+			return QueryResult{}, err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	option := milvussdk.NewQueryOption(req.Collection).
+		WithFilter(req.Expr).
+		WithLimit(req.Limit).
+		WithOutputFields(req.OutputFields...)
+	result, err := client.Query(callCtx, option)
+	if err != nil {
+		return QueryResult{}, err
+	}
+	return QueryResult{ResultCount: result.ResultCount}, nil
+}
+
+func (c *sdkClient) Search(ctx context.Context, req SearchRequest) (SearchResult, error) {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if req.Database != "" {
+		scopedClient, err := c.newScopedClient(ctx, req.Database)
+		if err != nil {
+			return SearchResult{}, err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	option := milvussdk.NewSearchOption(req.Collection, req.TopK, []entity.Vector{entity.FloatVector(req.Vector)}).
+		WithANNSField(req.AnnsField).
+		WithFilter(req.Expr).
+		WithOutputFields(req.OutputFields...)
+	resultSets, err := client.Search(callCtx, option)
+	if err != nil {
+		return SearchResult{}, err
+	}
+
+	count := 0
+	if len(resultSets) > 0 {
+		count = resultSets[0].ResultCount
+	}
+	return SearchResult{ResultCount: count}, nil
 }
 
 func (c *sdkClient) GetMetrics(ctx context.Context, metricType string) (string, error) {

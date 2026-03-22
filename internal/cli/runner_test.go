@@ -7,6 +7,7 @@ import (
 
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
+	"github.com/weiqinzhou3/milvus-health/internal/probes"
 )
 
 type fakeLoader struct {
@@ -66,6 +67,17 @@ type fakeK8sCollector struct {
 	err       error
 }
 
+type fakeReadProbe struct {
+	result model.BusinessReadProbeResult
+	err    error
+	scope  probes.ProbeScope
+}
+
+type fakeRWProbe struct {
+	result model.RWProbeResult
+	err    error
+}
+
 func (f fakeMilvusCollector) CollectClusterInfo(ctx context.Context, cfg *model.Config) (model.ClusterInfo, error) {
 	_ = ctx
 	_ = cfg
@@ -82,6 +94,19 @@ func (f fakeK8sCollector) Collect(ctx context.Context, cfg *model.Config) (model
 	_ = ctx
 	_ = cfg
 	return f.inventory, f.err
+}
+
+func (f *fakeReadProbe) Run(ctx context.Context, cfg *model.Config, scope probes.ProbeScope) (model.BusinessReadProbeResult, error) {
+	_ = ctx
+	_ = cfg
+	f.scope = scope
+	return f.result, f.err
+}
+
+func (f fakeRWProbe) Run(ctx context.Context, cfg *model.Config) (model.RWProbeResult, error) {
+	_ = ctx
+	_ = cfg
+	return f.result, f.err
 }
 
 func TestValidateRunner_Run_ReturnsNil_ForValidConfig(t *testing.T) {
@@ -266,6 +291,48 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 	}
 	if len(got.Checks) != 4 {
 		t.Fatalf("Checks = %#v, want 4 checks", got.Checks)
+	}
+}
+
+func TestCheckRunner_PassesBusinessReadProbeResultToAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	readProbe := &fakeReadProbe{
+		result: model.BusinessReadProbeResult{
+			Status:            model.CheckStatusPass,
+			ConfiguredTargets: 1,
+			SuccessfulTargets: 1,
+			MinSuccessTargets: 1,
+			Message:           "1/1 read probe targets succeeded",
+		},
+	}
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{Name: "demo", MilvusURI: "127.0.0.1:19530", Namespace: "milvus", MilvusVersion: "2.6.1", ArchProfile: model.ArchProfileV26},
+			inventory:   model.MilvusInventory{DatabaseCount: 1, CollectionCount: 1},
+		},
+		K8sCollector: fakeK8sCollector{},
+		ReadProbe:    readProbe,
+		RWProbe: fakeRWProbe{
+			result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe not implemented in this iteration"},
+		},
+		Analyzer: analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml", Database: "default", Collection: "book"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if analyzer.input.Snapshot.BusinessReadProbe.Status != model.CheckStatusPass {
+		t.Fatalf("BusinessReadProbe = %#v", analyzer.input.Snapshot.BusinessReadProbe)
+	}
+	if readProbe.scope.Database != "default" || readProbe.scope.Collection != "book" {
+		t.Fatalf("scope = %#v", readProbe.scope)
 	}
 }
 

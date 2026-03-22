@@ -39,8 +39,24 @@ func sampleResult() *model.AnalysisResult {
 			EndpointCount:            1,
 		},
 		Probes: model.ProbeOutputView{
-			BusinessRead: model.BusinessReadProbeResult{Status: model.CheckStatusPass, Message: "ok"},
-			RW:           model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "stub"},
+			BusinessRead: model.BusinessReadProbeResult{
+				Status:            model.CheckStatusPass,
+				ConfiguredTargets: 1,
+				SuccessfulTargets: 1,
+				MinSuccessTargets: 1,
+				Message:           "1/1 read probe targets succeeded",
+				Targets: []model.BusinessReadTargetResult{
+					{
+						Database:   "default",
+						Collection: "book",
+						Action:     model.ProbeActionQuery,
+						Success:    true,
+						DurationMS: 12,
+						RowCount:   int64Ptr(123),
+					},
+				},
+			},
+			RW: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "stub"},
 		},
 		Inventory: &model.ClusterInventory{
 			Milvus: model.MilvusInventory{
@@ -157,7 +173,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -207,6 +223,9 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "Endpoint Detail:\n- milvus: addresses=10.0.0.1") {
 		t.Fatalf("detail=true should include endpoint detail: %s", out)
 	}
+	if !strings.Contains(string(out), "Business Read Probe Targets:\n- default.book: action=query success=true duration_ms=12 row_count=123") {
+		t.Fatalf("detail=true should include business read probe targets: %s", out)
+	}
 }
 
 func TestJSONRenderer_DetailFalse_StableShape(t *testing.T) {
@@ -251,6 +270,18 @@ func TestJSONRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 	if _, ok := decoded["checks"]; !ok {
 		t.Fatalf("detail=true should include checks, got %s", out)
+	}
+}
+
+func TestJSONRenderer_DetailFalse_OmitsBusinessReadTargets(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: false})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(string(out), "\"targets\"") {
+		t.Fatalf("detail=false should omit business read targets: %s", out)
 	}
 }
 

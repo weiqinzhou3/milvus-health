@@ -27,10 +27,20 @@
   "probes": {
     "business_read": {
       "status": "pass",
-      "configured_targets": 0,
-      "successful_targets": 0,
-      "min_success_targets": 0,
-      "message": "ok"
+      "configured_targets": 1,
+      "successful_targets": 1,
+      "min_success_targets": 1,
+      "message": "1/1 read probe targets succeeded",
+      "targets": [
+        {
+          "database": "default",
+          "collection": "book",
+          "action": "query",
+          "success": true,
+          "duration_ms": 12,
+          "row_count": 123
+        }
+      ]
     },
     "rw": {
       "status": "skip",

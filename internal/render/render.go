@@ -52,6 +52,13 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		result.Summary.EndpointCount,
 		formatResourceUsageSummary(result),
 	)
+	fmt.Fprintf(&b, "Business Read Probe: status=%s configured_targets=%d successful_targets=%d min_success_targets=%d message=%s\n",
+		result.Probes.BusinessRead.Status,
+		result.Probes.BusinessRead.ConfiguredTargets,
+		result.Probes.BusinessRead.SuccessfulTargets,
+		result.Probes.BusinessRead.MinSuccessTargets,
+		displayString(result.Probes.BusinessRead.Message, "unknown"),
+	)
 	if result.Inventory != nil {
 		fmt.Fprintf(&b, "Databases: %s\n", formatDatabases(result.Inventory.Milvus.Databases))
 	}
@@ -122,6 +129,23 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 			}
 		}
 	}
+	if opts.Detail && len(result.Probes.BusinessRead.Targets) > 0 {
+		b.WriteString("Business Read Probe Targets:\n")
+		for _, target := range result.Probes.BusinessRead.Targets {
+			fmt.Fprintf(&b, "- %s.%s: action=%s success=%t duration_ms=%d row_count=%s",
+				target.Database,
+				target.Collection,
+				target.Action,
+				target.Success,
+				target.DurationMS,
+				displayInt64(target.RowCount),
+			)
+			if target.Error != "" {
+				fmt.Fprintf(&b, " error=%s", target.Error)
+			}
+			b.WriteString("\n")
+		}
+	}
 	if opts.Detail && len(result.Checks) > 0 {
 		b.WriteString("Checks:\n")
 		for _, check := range result.Checks {
@@ -149,11 +173,24 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		ExitCode   int                     `json:"exit_code"`
 		ElapsedMS  int64                   `json:"elapsed_ms"`
 		Summary    model.AnalysisSummary   `json:"summary"`
-		Probes     model.ProbeOutputView   `json:"probes"`
+		Probes     any                     `json:"probes"`
 		Inventory  *model.ClusterInventory `json:"inventory,omitempty"`
 		Warnings   []string                `json:"warnings,omitempty"`
 		Failures   []string                `json:"failures,omitempty"`
 		Checks     []model.CheckResult     `json:"checks"`
+	}
+
+	type businessReadSummary struct {
+		Status            model.CheckStatus `json:"status"`
+		ConfiguredTargets int               `json:"configured_targets"`
+		SuccessfulTargets int               `json:"successful_targets"`
+		MinSuccessTargets int               `json:"min_success_targets"`
+		Message           string            `json:"message"`
+	}
+
+	type probeOutputSummary struct {
+		BusinessRead businessReadSummary `json:"business_read"`
+		RW           model.RWProbeResult `json:"rw"`
 	}
 
 	payload := output{
@@ -164,12 +201,22 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		ExitCode:   result.ExitCode,
 		ElapsedMS:  result.ElapsedMS,
 		Summary:    result.Summary,
-		Probes:     result.Probes,
-		Inventory:  result.Inventory,
-		Warnings:   result.Warnings,
-		Failures:   result.Failures,
+		Probes: probeOutputSummary{
+			BusinessRead: businessReadSummary{
+				Status:            result.Probes.BusinessRead.Status,
+				ConfiguredTargets: result.Probes.BusinessRead.ConfiguredTargets,
+				SuccessfulTargets: result.Probes.BusinessRead.SuccessfulTargets,
+				MinSuccessTargets: result.Probes.BusinessRead.MinSuccessTargets,
+				Message:           result.Probes.BusinessRead.Message,
+			},
+			RW: result.Probes.RW,
+		},
+		Inventory: result.Inventory,
+		Warnings:  result.Warnings,
+		Failures:  result.Failures,
 	}
 	if opts.Detail {
+		payload.Probes = result.Probes
 		payload.Checks = append([]model.CheckResult(nil), result.Checks...)
 	} else {
 		payload.Checks = []model.CheckResult{}

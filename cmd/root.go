@@ -16,6 +16,7 @@ import (
 	"github.com/weiqinzhou3/milvus-health/internal/model"
 	platformk8s "github.com/weiqinzhou3/milvus-health/internal/platform/k8s"
 	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
+	"github.com/weiqinzhou3/milvus-health/internal/probes"
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
@@ -171,6 +172,10 @@ func defaultDependencies() dependencies {
 			K8sCollector: collectork8s.DefaultCollector{
 				Factory: platformk8s.ClientGoClientFactory{},
 			},
+			ReadProbe: probes.DefaultBusinessReadProbe{
+				Factory: platformmilvus.SDKClientFactory{},
+			},
+			RWProbe:  probes.NoopRWProbe{},
 			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner: cli.DefaultValidateRunner{

@@ -52,15 +52,8 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			EndpointCount:            len(input.Inventory.K8s.Endpoints),
 		},
 		Probes: model.ProbeOutputView{
-			BusinessRead: model.BusinessReadProbeResult{
-				Status:  model.CheckStatusSkip,
-				Message: "not enabled in this iteration",
-			},
-			RW: model.RWProbeResult{
-				Status:  model.CheckStatusSkip,
-				Enabled: input.Config.Probe.RW.Enabled,
-				Message: "rw probe not enabled in this iteration",
-			},
+			BusinessRead: input.Snapshot.BusinessReadProbe,
+			RW:           input.Snapshot.RWProbe,
 		},
 		Warnings:  append([]string(nil), input.Warnings...),
 		Failures:  append([]string(nil), input.Failures...),
@@ -100,6 +93,7 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 	}
 
 	appendK8sChecks(result, input)
+	appendProbeChecks(result, input)
 
 	if hasMilvusFacts(input.Inventory.Milvus) || hasK8sFacts(input.Inventory.K8s) {
 		inventory := input.Inventory
@@ -136,6 +130,57 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 	}
 
 	return result, nil
+}
+
+func appendProbeChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
+	probe := result.Probes.BusinessRead
+	if probe.Status == "" {
+		if result.Probes.RW.Status == "" {
+			result.Probes.RW = model.RWProbeResult{
+				Status:  model.CheckStatusSkip,
+				Enabled: input.Config.Probe.RW.Enabled,
+				Message: "rw probe not implemented in this iteration",
+			}
+		}
+		return
+	}
+	if result.Probes.RW.Status == "" {
+		result.Probes.RW = model.RWProbeResult{
+			Status:  model.CheckStatusSkip,
+			Enabled: input.Config.Probe.RW.Enabled,
+			Message: "rw probe not implemented in this iteration",
+		}
+	}
+
+	check := model.CheckResult{
+		Category: "probe",
+		Name:     "business-read-probe",
+		Status:   probe.Status,
+		Message:  probe.Message,
+		Actual: map[string]int{
+			"configured_targets": probe.ConfiguredTargets,
+			"successful_targets": probe.SuccessfulTargets,
+		},
+		Expected: probe.MinSuccessTargets,
+	}
+	for _, target := range probe.Targets {
+		if target.Success || strings.TrimSpace(target.Error) == "" {
+			continue
+		}
+		check.Evidence = append(check.Evidence, fmt.Sprintf("%s.%s: %s", target.Database, target.Collection, target.Error))
+	}
+	result.Checks = append(result.Checks, check)
+
+	switch probe.Status {
+	case model.CheckStatusWarn:
+		result.Warnings = append(result.Warnings, probe.Message)
+	case model.CheckStatusFail:
+		result.Failures = append(result.Failures, probe.Message)
+	case model.CheckStatusSkip:
+		if input.Config.Rules.RequireProbeForStandby {
+			result.Warnings = append(result.Warnings, "standby confidence downgraded because probes were skipped")
+		}
+	}
 }
 
 func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {

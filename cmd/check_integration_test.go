@@ -12,6 +12,7 @@ import (
 	"github.com/weiqinzhou3/milvus-health/internal/config"
 	platformk8s "github.com/weiqinzhou3/milvus-health/internal/platform/k8s"
 	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
+	"github.com/weiqinzhou3/milvus-health/internal/probes"
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
@@ -33,8 +34,25 @@ func fakeRealDependencies() dependencies {
 						CollectionIDs: map[string]map[string]int64{
 							"default": {"book": 1001},
 						},
+						Descriptions: map[string]map[string]platformmilvus.CollectionDescription{
+							"default": {
+								"book": {
+									ID:   1001,
+									Name: "book",
+									Fields: []platformmilvus.CollectionField{
+										{Name: "id", DataType: "Int64", IsPrimaryKey: true},
+									},
+								},
+							},
+						},
 						RowCounts: map[string]map[string]int64{
 							"default": {"book": 123},
+						},
+						LoadStates: map[string]map[string]platformmilvus.LoadState{
+							"default": {"book": platformmilvus.LoadStateLoaded},
+						},
+						QueryResults: map[string]map[string]platformmilvus.QueryResult{
+							"default": {"book": {ResultCount: 1}},
 						},
 						MetricsByType: map[string]string{
 							"system_info": `{"quota_metrics":{"total_binlog_size":4567,"collection_binlog_size":{"1001":4567}}}`,
@@ -68,6 +86,33 @@ func fakeRealDependencies() dependencies {
 					},
 				},
 			},
+			ReadProbe: probes.DefaultBusinessReadProbe{
+				Factory: platformmilvus.FakeClientFactory{
+					Client: &platformmilvus.FakeClient{
+						Descriptions: map[string]map[string]platformmilvus.CollectionDescription{
+							"default": {
+								"book": {
+									ID:   1001,
+									Name: "book",
+									Fields: []platformmilvus.CollectionField{
+										{Name: "id", DataType: "Int64", IsPrimaryKey: true},
+									},
+								},
+							},
+						},
+						RowCounts: map[string]map[string]int64{
+							"default": {"book": 123},
+						},
+						LoadStates: map[string]map[string]platformmilvus.LoadState{
+							"default": {"book": platformmilvus.LoadStateLoaded},
+						},
+						QueryResults: map[string]map[string]platformmilvus.QueryResult{
+							"default": {"book": {ResultCount: 1}},
+						},
+					},
+				},
+			},
+			RWProbe:  probes.NoopRWProbe{},
 			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner:  cli.DefaultValidateRunner{Loader: config.YAMLLoader{}, Validator: config.ConfigValidator{}, DefaultApplier: config.DefaultValueApplier{}},
@@ -87,7 +132,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}

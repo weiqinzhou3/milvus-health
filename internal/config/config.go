@@ -101,6 +101,9 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 		if strings.TrimSpace(target.Collection) == "" {
 			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].collection", i), Message: "is required"})
 		}
+		if target.TopK < 0 {
+			fields = append(fields, FieldError{Field: fmt.Sprintf("probe.read.targets[%d].topk", i), Message: "must be >= 0"})
+		}
 	}
 	if cfg.Probe.RW.Enabled {
 		if strings.TrimSpace(cfg.Probe.RW.TestDatabasePrefix) == "" {
@@ -134,6 +137,14 @@ func (DefaultValueApplier) Apply(cfg *model.Config) {
 	}
 	if cfg.Probe.Read.MinSuccessTargets == 0 && !cfg.Probe.Read.HasExplicitMinSuccessTargets() {
 		cfg.Probe.Read.MinSuccessTargets = 1
+	}
+	for i := range cfg.Probe.Read.Targets {
+		if strings.TrimSpace(cfg.Probe.Read.Targets[i].QueryExpr) == "" {
+			cfg.Probe.Read.Targets[i].QueryExpr = "id >= 0"
+		}
+		if cfg.Probe.Read.Targets[i].TopK == 0 {
+			cfg.Probe.Read.Targets[i].TopK = 3
+		}
 	}
 	if cfg.Probe.RW.TestDatabasePrefix == "" {
 		cfg.Probe.RW.TestDatabasePrefix = "milvus_health_test"

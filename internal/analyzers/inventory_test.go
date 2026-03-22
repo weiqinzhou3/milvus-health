@@ -424,6 +424,90 @@ func TestAnalyzer_WarnsWhenCollectionRowCountIsPartial(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	cfg := analysisConfig()
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: cfg,
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+			BusinessReadProbe: model.BusinessReadProbeResult{
+				Status:            model.CheckStatusSkip,
+				MinSuccessTargets: 1,
+				Message:           "not configured",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Probes.BusinessRead.Status != model.CheckStatusSkip {
+		t.Fatalf("BusinessRead = %#v", result.Probes.BusinessRead)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "business-read-probe" && check.Status == model.CheckStatusSkip {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_FailsWhenBusinessReadProbeFailsAndKeepsEvidence(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+			BusinessReadProbe: model.BusinessReadProbeResult{
+				Status:            model.CheckStatusFail,
+				ConfiguredTargets: 1,
+				SuccessfulTargets: 0,
+				MinSuccessTargets: 1,
+				Message:           "no read probe targets succeeded",
+				Targets: []model.BusinessReadTargetResult{{
+					Database:   "default",
+					Collection: "book",
+					Action:     model.ProbeActionQuery,
+					Success:    false,
+					Error:      "query failed: timeout",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultFAIL {
+		t.Fatalf("Result = %s, want FAIL", result.Result)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "business-read-probe" && len(check.Evidence) == 1 && strings.Contains(check.Evidence[0], "default.book") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
 func TestAnalyzer_WarnsWhenCollectionBinlogSizeIsPartial(t *testing.T) {
 	t.Parallel()
 
