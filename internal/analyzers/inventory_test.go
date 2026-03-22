@@ -449,6 +449,137 @@ func TestAnalyzer_LowersConfidenceWhenSkipChecksPresent(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_WarnsWhenResourceUsagePermissionDenied(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                 "milvus",
+				TotalPodCount:             1,
+				ReadyPodCount:             1,
+				ResourceUsageAvailable:    false,
+				ResourceUnavailableReason: model.MetricsUnavailableReasonPermissionDenied,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-usage" && check.Status == model.CheckStatusWarn {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "insufficient permissions") {
+		t.Fatalf("Warnings = %#v", result.Warnings)
+	}
+}
+
+func TestAnalyzer_NoRatioWarnWhenBelowThreshold(t *testing.T) {
+	t.Parallel()
+
+	// CPULimitRatio=0.5 is below the 0.85 threshold — must NOT produce a k8s-resource-ratio WARN.
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                "milvus",
+				TotalPodCount:            1,
+				ReadyPodCount:            1,
+				ResourceUsageAvailable:   true,
+				ResourceUsagePartial:     false,
+				MetricsAvailablePodCount: 1,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true, CPULimitRatio: float64Ptr(0.5), MemoryLimitRatio: float64Ptr(0.5)},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultPASS {
+		t.Fatalf("Result = %s, want PASS", result.Result)
+	}
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-ratio" && check.Status == model.CheckStatusWarn {
+			t.Fatalf("unexpected k8s-resource-ratio WARN when ratios are below threshold: %#v", check)
+		}
+	}
+}
+
+func TestAnalyzer_NoRatioWarnFromRequestRatioAlone(t *testing.T) {
+	t.Parallel()
+
+	// High CPURequestRatio (0.9) with nil CPULimitRatio — spec §12.6 says only limit ratio triggers WARN.
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                "milvus",
+				TotalPodCount:            1,
+				ReadyPodCount:            1,
+				ResourceUsageAvailable:   true,
+				ResourceUsagePartial:     false,
+				MetricsAvailablePodCount: 1,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true, CPURequestRatio: float64Ptr(0.9), MemoryRequestRatio: float64Ptr(0.9)},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultPASS {
+		t.Fatalf("Result = %s, want PASS (request ratios must not trigger k8s-resource-ratio WARN)", result.Result)
+	}
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-ratio" && check.Status == model.CheckStatusWarn {
+			t.Fatalf("unexpected k8s-resource-ratio WARN from request ratio alone: %#v", check)
+		}
+	}
+}
+
 func int64Ptr(v int64) *int64 {
 	return &v
 }
