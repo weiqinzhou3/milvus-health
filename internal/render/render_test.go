@@ -305,6 +305,36 @@ func TestRenderers_UseUnknownAndNullForMissingBinlogSize(t *testing.T) {
 	}
 }
 
+func TestRenderers_UseUnknownForMissingTotalButPreserveCollectionBinlogSize(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Summary.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.TotalBinlogSizeBytes = nil
+
+	textOut, err := (render.TextRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("text Render() error = %v", err)
+	}
+	if !strings.Contains(string(textOut), "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=unknown pods=2") {
+		t.Fatalf("text output should render unknown total binlog size: %s", textOut)
+	}
+	if !strings.Contains(string(textOut), "Collection Detail:\n- default.book: row_count=123 binlog_size_bytes=4567") {
+		t.Fatalf("text output should preserve collection binlog size detail: %s", textOut)
+	}
+
+	jsonOut, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("json Render() error = %v", err)
+	}
+	if !strings.Contains(string(jsonOut), `"total_binlog_size_bytes": null`) {
+		t.Fatalf("json output should render null total binlog size: %s", jsonOut)
+	}
+	if !strings.Contains(string(jsonOut), `"binlog_size_bytes": 4567`) {
+		t.Fatalf("json output should preserve collection binlog size: %s", jsonOut)
+	}
+}
+
 func int64Ptr(v int64) *int64 {
 	return &v
 }
