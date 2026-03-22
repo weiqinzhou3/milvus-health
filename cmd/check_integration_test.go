@@ -7,8 +7,10 @@ import (
 
 	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
+	collectork8s "github.com/weiqinzhou3/milvus-health/internal/collectors/k8s"
 	collectormilvus "github.com/weiqinzhou3/milvus-health/internal/collectors/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/config"
+	platformk8s "github.com/weiqinzhou3/milvus-health/internal/platform/k8s"
 	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
@@ -34,6 +36,15 @@ func fakeRealDependencies() dependencies {
 					},
 				},
 			},
+			K8sCollector: collectork8s.DefaultCollector{
+				Factory: platformk8s.FakeClientFactory{
+					Client: &platformk8s.FakeClient{
+						Pods:      []platformk8s.Pod{{Name: "proxy-0", Phase: "Running", Ready: true, RestartCount: 0}},
+						Services:  []platformk8s.Service{{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}}},
+						Endpoints: []platformk8s.Endpoint{{Name: "milvus-abc", Addresses: []string{"10.0.0.1"}}},
+					},
+				},
+			},
 			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner:  cli.DefaultValidateRunner{Loader: config.YAMLLoader{}, Validator: config.ConfigValidator{}, DefaultApplier: config.DefaultValueApplier{}},
@@ -53,7 +64,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 pods=0", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 pods=1", "K8s Summary: services=1 endpoints=1", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}

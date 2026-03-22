@@ -61,6 +61,11 @@ type fakeMilvusCollector struct {
 	inventoryErr error
 }
 
+type fakeK8sCollector struct {
+	inventory model.K8sInventory
+	err       error
+}
+
 func (f fakeMilvusCollector) CollectClusterInfo(ctx context.Context, cfg *model.Config) (model.ClusterInfo, error) {
 	_ = ctx
 	_ = cfg
@@ -71,6 +76,12 @@ func (f fakeMilvusCollector) CollectInventory(ctx context.Context, cfg *model.Co
 	_ = ctx
 	_ = cfg
 	return f.inventory, f.inventoryErr
+}
+
+func (f fakeK8sCollector) Collect(ctx context.Context, cfg *model.Config) (model.K8sInventory, error) {
+	_ = ctx
+	_ = cfg
+	return f.inventory, f.err
 }
 
 func TestValidateRunner_Run_ReturnsNil_ForValidConfig(t *testing.T) {
@@ -124,7 +135,8 @@ func TestCheckRunner_Run_ReturnsStubAnalysisResult(t *testing.T) {
 				},
 			},
 		},
-		Analyzer: &fakeAnalyzer{result: expected},
+		K8sCollector: fakeK8sCollector{},
+		Analyzer:     &fakeAnalyzer{result: expected},
 	}
 
 	got, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
@@ -167,6 +179,7 @@ func TestCheckRunner_FullStubPipeline_Works(t *testing.T) {
 				},
 			},
 		},
+		K8sCollector: fakeK8sCollector{},
 		Analyzer: &fakeAnalyzer{
 			result: expected,
 		},
@@ -216,7 +229,21 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
 		MilvusCollector: collector,
-		Analyzer:        analyzer,
+		K8sCollector: fakeK8sCollector{
+			inventory: model.K8sInventory{
+				Namespace: "milvus",
+				Pods: []model.PodStatusSummary{
+					{Name: "milvus-0", Phase: "Running", Ready: true, RestartCount: 0},
+				},
+				Services: []model.ServiceInventory{
+					{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}},
+				},
+				Endpoints: []model.EndpointInventory{
+					{Name: "milvus-abc", Addresses: []string{"10.0.0.1"}},
+				},
+			},
+		},
+		Analyzer: analyzer,
 	}
 
 	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
@@ -234,8 +261,11 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 	if got.Inventory.Milvus.TotalRowCount == nil || *got.Inventory.Milvus.TotalRowCount != 60 {
 		t.Fatalf("Inventory.TotalRowCount = %#v", got.Inventory.Milvus.TotalRowCount)
 	}
-	if len(got.Checks) != 3 {
-		t.Fatalf("Checks = %#v, want 3 checks", got.Checks)
+	if got.Inventory.K8s.Namespace != "milvus" || len(got.Inventory.K8s.Services) != 1 {
+		t.Fatalf("K8sInventory = %#v", got.Inventory.K8s)
+	}
+	if len(got.Checks) != 4 {
+		t.Fatalf("Checks = %#v, want 4 checks", got.Checks)
 	}
 }
 
@@ -249,6 +279,7 @@ func TestCheckRunner_TransformsMilvusFailureIntoAnalyzeInput(t *testing.T) {
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
 		MilvusCollector: fakeMilvusCollector{clusterErr: errors.New("dial failed")},
+		K8sCollector:    fakeK8sCollector{},
 		Analyzer:        analyzer,
 	}
 
@@ -263,6 +294,38 @@ func TestCheckRunner_TransformsMilvusFailureIntoAnalyzeInput(t *testing.T) {
 	}
 	if got.Checks[0].Status != model.CheckStatusFail {
 		t.Fatalf("first check = %#v", got.Checks[0])
+	}
+	if got.Checks[len(got.Checks)-1].Name != "k8s-collection" || got.Checks[len(got.Checks)-1].Status != model.CheckStatusPass {
+		t.Fatalf("last check = %#v", got.Checks[len(got.Checks)-1])
+	}
+}
+
+func TestCheckRunner_TransformsK8sFailureIntoAnalyzeInput(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{},
+		K8sCollector:    fakeK8sCollector{err: errors.New("forbidden")},
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := analyzer.input
+	if len(got.Failures) != 1 {
+		t.Fatalf("Failures = %#v", got.Failures)
+	}
+	last := got.Checks[len(got.Checks)-1]
+	if last.Name != "k8s-collection" || last.Status != model.CheckStatusFail {
+		t.Fatalf("last check = %#v", last)
 	}
 }
 

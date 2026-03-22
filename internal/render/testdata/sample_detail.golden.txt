@@ -1,0 +1,26 @@
+Cluster: demo-cluster
+Milvus URI: localhost:19530
+Namespace: milvus
+Milvus Version: 2.6.1
+Arch Profile: v2.6
+MQ Type: pulsar
+Overall Result: WARN
+Standby: false
+Confidence: medium
+Exit Code: 1
+Summary: databases=1 collections=1 total_rows=123 pods=2
+K8s Summary: services=1 endpoints=1
+Databases: default(book)
+Inventory: milvus_version=2.6.1 databases=1 collections=1 total_rows=123
+Collection Detail:
+- default.book: row_count=123
+Inventory: namespace=milvus pods=1 services=1 endpoints=1
+Pod Detail:
+- milvus-0: phase=Running ready=true restart_count=0
+Service Detail:
+- milvus: type=ClusterIP ports=19530/tcp
+Endpoint Detail:
+- milvus: addresses=10.0.0.1
+Checks:
+- stub-check [warn]: stub
+  Recommendation: inspect fake pipeline
