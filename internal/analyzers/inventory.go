@@ -94,6 +94,9 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			if result.Confidence == model.ConfidenceHigh {
 				result.Confidence = model.ConfidenceMedium
 			}
+		case model.CheckStatusSkip:
+			// spec §16: any module skip lowers confidence to low
+			result.Confidence = model.ConfidenceLow
 		}
 	}
 

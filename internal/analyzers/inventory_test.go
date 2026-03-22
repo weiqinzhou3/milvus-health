@@ -205,6 +205,10 @@ func TestAnalyzer_SkipsK8sPodHealthWhenArchUnknown(t *testing.T) {
 	if result.Result != model.FinalResultPASS {
 		t.Fatalf("Result = %s, want PASS", result.Result)
 	}
+	// spec §16: arch_profile=unknown skip must lower confidence to low
+	if result.Confidence != model.ConfidenceLow {
+		t.Fatalf("Confidence = %s, want low (arch_profile unknown causes skip which lowers confidence)", result.Confidence)
+	}
 	foundSkip := false
 	for _, check := range result.Checks {
 		if check.Name == "k8s-pod-health" && check.Status == model.CheckStatusSkip {
@@ -312,6 +316,37 @@ func TestAnalyzer_WarnsWhenCollectionRowCountIsPartial(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_SkipCheckLowersConfidenceToLow(t *testing.T) {
+	t.Parallel()
+
+	// Verify spec §16: any skip check lowers confidence to low, even when result is otherwise PASS.
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Category: "k8s", Name: "k8s-collection", Status: model.CheckStatusSkip, Message: "k8s collector not wired"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultPASS {
+		t.Fatalf("Result = %s, want PASS (skip does not escalate result)", result.Result)
+	}
+	if result.Confidence != model.ConfidenceLow {
+		t.Fatalf("Confidence = %s, want low (spec §16: any module skip → confidence=low)", result.Confidence)
 	}
 }
 
