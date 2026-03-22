@@ -104,11 +104,115 @@ func TestAnalyzer_ReturnsPassForSuccessfulMilvusInventory(t *testing.T) {
 	if result.Summary.DatabaseCount != 1 || result.Summary.CollectionCount != 2 {
 		t.Fatalf("Summary = %#v", result.Summary)
 	}
+	if result.Summary.ServiceCount != 0 || result.Summary.EndpointCount != 0 {
+		t.Fatalf("K8s Summary = %#v", result.Summary)
+	}
 	if result.Summary.TotalRowCount == nil || *result.Summary.TotalRowCount != 30 {
 		t.Fatalf("Summary.TotalRowCount = %#v, want 30", result.Summary.TotalRowCount)
 	}
 	if result.ElapsedMS != 500 {
 		t.Fatalf("ElapsedMS = %d, want 500", result.ElapsedMS)
+	}
+}
+
+func TestAnalyzer_AddsK8sWarningsForNotReadyAndRestartedPods(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace: "milvus",
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: false, RestartCount: 2},
+					{Name: "querynode-0", Phase: "Running", Ready: true, RestartCount: 0},
+				},
+				Services: []model.ServiceInventory{
+					{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}},
+				},
+				Endpoints: []model.EndpointInventory{
+					{Name: "milvus-abc", Addresses: []string{"10.0.0.1"}},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Name: "k8s-collection", Status: model.CheckStatusPass, Message: "Kubernetes inventory collected successfully"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	if result.Summary.PodCount != 2 || result.Summary.ServiceCount != 1 || result.Summary.EndpointCount != 1 {
+		t.Fatalf("Summary = %#v", result.Summary)
+	}
+	if len(result.Warnings) != 2 {
+		t.Fatalf("Warnings = %#v", result.Warnings)
+	}
+	foundReadiness := false
+	foundRestarts := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-pod-readiness" && check.Status == model.CheckStatusWarn {
+			foundReadiness = true
+		}
+		if check.Name == "k8s-pod-restarts" && check.Status == model.CheckStatusWarn {
+			foundRestarts = true
+		}
+	}
+	if !foundReadiness || !foundRestarts {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_SkipsK8sPodHealthWhenArchUnknown(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace: "milvus",
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: false, RestartCount: 1},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:        "demo",
+				MilvusURI:   "127.0.0.1:19530",
+				Namespace:   "milvus",
+				ArchProfile: model.ArchProfileUnknown,
+				MQType:      "unknown",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultPASS {
+		t.Fatalf("Result = %s, want PASS", result.Result)
+	}
+	foundSkip := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-pod-health" && check.Status == model.CheckStatusSkip {
+			foundSkip = true
+		}
+	}
+	if !foundSkip {
+		t.Fatalf("Checks = %#v", result.Checks)
 	}
 }
 

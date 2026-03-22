@@ -44,6 +44,7 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		displayInt64(result.Summary.TotalRowCount),
 		result.Summary.PodCount,
 	)
+	fmt.Fprintf(&b, "K8s Summary: services=%d endpoints=%d\n", result.Summary.ServiceCount, result.Summary.EndpointCount)
 	if result.Inventory != nil {
 		fmt.Fprintf(&b, "Databases: %s\n", formatDatabases(result.Inventory.Milvus.Databases))
 	}
@@ -70,6 +71,24 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		}
 		if result.Inventory.K8s.Namespace != "" || len(result.Inventory.K8s.Pods) > 0 {
 			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d services=%d endpoints=%d\n", result.Inventory.K8s.Namespace, len(result.Inventory.K8s.Pods), len(result.Inventory.K8s.Services), len(result.Inventory.K8s.Endpoints))
+			if len(result.Inventory.K8s.Pods) > 0 {
+				b.WriteString("Pod Detail:\n")
+				for _, pod := range result.Inventory.K8s.Pods {
+					fmt.Fprintf(&b, "- %s: phase=%s ready=%t restart_count=%d\n", pod.Name, pod.Phase, pod.Ready, pod.RestartCount)
+				}
+			}
+			if len(result.Inventory.K8s.Services) > 0 {
+				b.WriteString("Service Detail:\n")
+				for _, service := range result.Inventory.K8s.Services {
+					fmt.Fprintf(&b, "- %s: type=%s ports=%s\n", service.Name, service.Type, strings.Join(service.Ports, ","))
+				}
+			}
+			if len(result.Inventory.K8s.Endpoints) > 0 {
+				b.WriteString("Endpoint Detail:\n")
+				for _, endpoint := range result.Inventory.K8s.Endpoints {
+					fmt.Fprintf(&b, "- %s: addresses=%s\n", endpoint.Name, strings.Join(endpoint.Addresses, ","))
+				}
+			}
 		}
 	}
 	if opts.Detail && len(result.Checks) > 0 {

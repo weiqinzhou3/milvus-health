@@ -247,6 +247,8 @@ type AnalysisSummary struct {
 	CollectionCount int    `json:"collection_count"`
 	TotalRowCount   *int64 `json:"total_row_count"`
 	PodCount        int    `json:"pod_count"`
+	ServiceCount    int    `json:"service_count"`
+	EndpointCount   int    `json:"endpoint_count"`
 }
 
 type ClusterInventory struct {

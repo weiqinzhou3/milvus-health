@@ -1,7 +1,10 @@
 package render_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +31,8 @@ func sampleResult() *model.AnalysisResult {
 			CollectionCount: 1,
 			TotalRowCount:   int64Ptr(123),
 			PodCount:        2,
+			ServiceCount:    1,
+			EndpointCount:   1,
 		},
 		Probes: model.ProbeOutputView{
 			BusinessRead: model.BusinessReadProbeResult{Status: model.CheckStatusPass, Message: "ok"},
@@ -120,7 +125,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "K8s Summary: services=1 endpoints=1", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -157,6 +162,15 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "Collection Detail:\n- default.book: row_count=123") {
 		t.Fatalf("detail=true should include collection row count detail: %s", out)
+	}
+	if !strings.Contains(string(out), "Pod Detail:\n- milvus-0: phase=Running ready=true restart_count=0") {
+		t.Fatalf("detail=true should include pod detail: %s", out)
+	}
+	if !strings.Contains(string(out), "Service Detail:\n- milvus: type=ClusterIP ports=19530/tcp") {
+		t.Fatalf("detail=true should include service detail: %s", out)
+	}
+	if !strings.Contains(string(out), "Endpoint Detail:\n- milvus: addresses=10.0.0.1") {
+		t.Fatalf("detail=true should include endpoint detail: %s", out)
 	}
 }
 
@@ -215,5 +229,39 @@ func TestRendererFactory_InvalidFormat_ReturnsError(t *testing.T) {
 	_, err := (render.DefaultRendererFactory{}).Get("yaml")
 	if err == nil {
 		t.Fatal("Get() expected error")
+	}
+}
+
+func TestTextRenderer_Golden(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.TextRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want, err := os.ReadFile(filepath.Join("testdata", "sample_detail.golden.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(want)) {
+		t.Fatalf("golden mismatch\nwant:\n%s\ngot:\n%s", want, out)
+	}
+}
+
+func TestJSONRenderer_Golden(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want, err := os.ReadFile(filepath.Join("testdata", "sample_detail.golden.json"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(want)) {
+		t.Fatalf("golden mismatch\nwant:\n%s\ngot:\n%s", want, out)
 	}
 }

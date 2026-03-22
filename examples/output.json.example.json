@@ -16,7 +16,9 @@
     "database_count": 0,
     "collection_count": 0,
     "total_row_count": null,
-    "pod_count": 0
+    "pod_count": 0,
+    "service_count": 0,
+    "endpoint_count": 0
   },
   "probes": {
     "business_read": {
@@ -33,7 +35,8 @@
     }
   },
   "failures": [
-    "create milvus client: context deadline exceeded"
+    "create milvus client: context deadline exceeded",
+    "create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory"
   ],
   "checks": []
 }

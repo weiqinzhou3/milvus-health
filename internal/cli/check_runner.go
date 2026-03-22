@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	collectork8s "github.com/weiqinzhou3/milvus-health/internal/collectors/k8s"
 	collectormilvus "github.com/weiqinzhou3/milvus-health/internal/collectors/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/config"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
@@ -15,6 +16,7 @@ type DefaultCheckRunner struct {
 	DefaultApplier  config.DefaultApplier
 	OverrideApplier config.OverrideApplier
 	MilvusCollector collectormilvus.Collector
+	K8sCollector    collectork8s.Collector
 	Analyzer        Analyzer
 }
 
@@ -155,6 +157,47 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 					},
 				})
 			}
+		}
+	}
+
+	if r.K8sCollector == nil {
+		input.Warnings = append(input.Warnings, "k8s collector is nil")
+		input.Checks = append(input.Checks, model.CheckResult{
+			Category:       "k8s",
+			Name:           "k8s-collection",
+			Status:         model.CheckStatusSkip,
+			Target:         cfg.K8s.Namespace,
+			Message:        "Kubernetes collection is unavailable because the collector is not wired",
+			Recommendation: "wire a Kubernetes collector into the check runner",
+		})
+	} else {
+		k8sInventory, err := r.K8sCollector.Collect(ctx, cfg)
+		if err != nil {
+			input.Failures = append(input.Failures, err.Error())
+			input.Checks = append(input.Checks, model.CheckResult{
+				Category:       "k8s",
+				Name:           "k8s-collection",
+				Status:         model.CheckStatusFail,
+				Target:         cfg.K8s.Namespace,
+				Message:        "Kubernetes inventory collection failed",
+				Recommendation: "verify kubeconfig, namespace access, and Kubernetes API reachability",
+				Evidence:       []string{err.Error()},
+			})
+		} else {
+			input.Inventory.K8s = k8sInventory
+			input.Snapshot.K8s = k8sInventory
+			input.Checks = append(input.Checks, model.CheckResult{
+				Category: "k8s",
+				Name:     "k8s-collection",
+				Status:   model.CheckStatusPass,
+				Target:   cfg.K8s.Namespace,
+				Message:  "Kubernetes inventory collected successfully",
+				Actual: map[string]int{
+					"pod_count":      len(k8sInventory.Pods),
+					"service_count":  len(k8sInventory.Services),
+					"endpoint_count": len(k8sInventory.Endpoints),
+				},
+			})
 		}
 	}
 

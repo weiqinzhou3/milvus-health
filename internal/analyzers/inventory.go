@@ -43,6 +43,8 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			CollectionCount: input.Inventory.Milvus.CollectionCount,
 			TotalRowCount:   input.Inventory.Milvus.TotalRowCount,
 			PodCount:        len(input.Inventory.K8s.Pods),
+			ServiceCount:    len(input.Inventory.K8s.Services),
+			EndpointCount:   len(input.Inventory.K8s.Endpoints),
 		},
 		Probes: model.ProbeOutputView{
 			BusinessRead: model.BusinessReadProbeResult{
@@ -73,7 +75,9 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 		})
 	}
 
-	if hasMilvusFacts(input.Inventory.Milvus) || len(input.Inventory.K8s.Pods) > 0 {
+	appendK8sChecks(result, input)
+
+	if hasMilvusFacts(input.Inventory.Milvus) || hasK8sFacts(input.Inventory.K8s) {
 		inventory := input.Inventory
 		result.Inventory = &inventory
 	}
@@ -108,6 +112,77 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 	return result, nil
 }
 
+func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
+	if !hasK8sFacts(input.Inventory.K8s) {
+		return
+	}
+
+	if result.Cluster.ArchProfile == model.ArchProfileUnknown {
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category: "k8s",
+			Name:     "k8s-pod-health",
+			Status:   model.CheckStatusSkip,
+			Target:   input.Inventory.K8s.Namespace,
+			Message:  "arch_profile unknown, pod health check skipped",
+		})
+		return
+	}
+
+	notReadyPods := make([]string, 0)
+	restartedPods := make([]string, 0)
+	for _, pod := range input.Inventory.K8s.Pods {
+		if !pod.Ready {
+			notReadyPods = append(notReadyPods, pod.Name)
+		}
+		if pod.RestartCount > 0 {
+			restartedPods = append(restartedPods, pod.Name)
+		}
+	}
+
+	switch {
+	case len(notReadyPods) > 0:
+		result.Warnings = append(result.Warnings, "pods not ready: "+strings.Join(notReadyPods, ", "))
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "k8s",
+			Name:           "k8s-pod-readiness",
+			Status:         model.CheckStatusWarn,
+			Target:         input.Inventory.K8s.Namespace,
+			Message:        "one or more pods are not ready",
+			Recommendation: "inspect pod readiness, events, and container logs",
+			Actual:         notReadyPods,
+		})
+	case len(restartedPods) > 0:
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category: "k8s",
+			Name:     "k8s-pod-health",
+			Status:   model.CheckStatusPass,
+			Target:   input.Inventory.K8s.Namespace,
+			Message:  "all collected pods are ready",
+		})
+	default:
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category: "k8s",
+			Name:     "k8s-pod-health",
+			Status:   model.CheckStatusPass,
+			Target:   input.Inventory.K8s.Namespace,
+			Message:  "all collected pods are ready with zero restarts",
+		})
+	}
+
+	if len(restartedPods) > 0 {
+		result.Warnings = append(result.Warnings, "pods restarted: "+strings.Join(restartedPods, ", "))
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "k8s",
+			Name:           "k8s-pod-restarts",
+			Status:         model.CheckStatusWarn,
+			Target:         input.Inventory.K8s.Namespace,
+			Message:        "one or more pods have restart_count > 0",
+			Recommendation: "inspect prior crashes and restart causes before declaring the cluster healthy",
+			Actual:         restartedPods,
+		})
+	}
+}
+
 func hasMilvusFacts(inventory model.MilvusInventory) bool {
 	return inventory.ServerVersion != "" ||
 		inventory.DatabaseCount > 0 ||
@@ -116,6 +191,13 @@ func hasMilvusFacts(inventory model.MilvusInventory) bool {
 		len(inventory.Collections) > 0 ||
 		len(inventory.Databases) > 0 ||
 		len(inventory.DatabaseNames) > 0
+}
+
+func hasK8sFacts(inventory model.K8sInventory) bool {
+	return inventory.Namespace != "" ||
+		len(inventory.Pods) > 0 ||
+		len(inventory.Services) > 0 ||
+		len(inventory.Endpoints) > 0
 }
 
 func collectionsMissingRowCount(inventory model.MilvusInventory) []string {
