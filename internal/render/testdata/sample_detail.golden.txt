@@ -18,7 +18,7 @@ Inventory: namespace=milvus pods=1 services=1 endpoints=1
 Pod Detail:
 - milvus-0: phase=Running ready=true restart_count=0
 Service Detail:
-- milvus: type=ClusterIP ports=19530/tcp
+- attu: type=NodePort ports=3000:30031/tcp
 Endpoint Detail:
 - milvus: addresses=10.0.0.1
 Checks:

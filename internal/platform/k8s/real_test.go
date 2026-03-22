@@ -34,8 +34,19 @@ func TestClientGoClient_ListPodsServicesAndEndpointSlices(t *testing.T) {
 		&corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{Name: "milvus", Namespace: "milvus"},
 			Spec: corev1.ServiceSpec{
-				Type:  corev1.ServiceTypeClusterIP,
-				Ports: []corev1.ServicePort{{Port: 19530, Protocol: corev1.ProtocolTCP}},
+				Type: corev1.ServiceTypeClusterIP,
+				Ports: []corev1.ServicePort{
+					{Port: 19530, Protocol: corev1.ProtocolTCP},
+				},
+			},
+		},
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "attu", Namespace: "milvus"},
+			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeNodePort,
+				Ports: []corev1.ServicePort{
+					{Port: 3000, NodePort: 30031, Protocol: corev1.ProtocolTCP},
+				},
 			},
 		},
 		&discoveryv1.EndpointSlice{
@@ -60,7 +71,7 @@ func TestClientGoClient_ListPodsServicesAndEndpointSlices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListServices() error = %v", err)
 	}
-	if len(services) != 1 || services[0].Ports[0] != "19530/tcp" {
+	if len(services) != 2 || services[0].Ports[0] != "3000:30031/tcp" || services[1].Ports[0] != "19530/tcp" {
 		t.Fatalf("ListServices() = %#v", services)
 	}
 

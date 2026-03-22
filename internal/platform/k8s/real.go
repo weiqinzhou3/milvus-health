@@ -160,7 +160,11 @@ func podRestartCount(pod corev1.Pod) int32 {
 func servicePorts(service corev1.Service) []string {
 	ports := make([]string, 0, len(service.Spec.Ports))
 	for _, port := range service.Spec.Ports {
-		ports = append(ports, fmt.Sprintf("%d/%s", port.Port, strings.ToLower(string(port.Protocol))))
+		value := fmt.Sprintf("%d", port.Port)
+		if service.Spec.Type == corev1.ServiceTypeNodePort && port.NodePort > 0 {
+			value = fmt.Sprintf("%s:%d", value, port.NodePort)
+		}
+		ports = append(ports, fmt.Sprintf("%s/%s", value, strings.ToLower(string(port.Protocol))))
 	}
 	return ports
 }

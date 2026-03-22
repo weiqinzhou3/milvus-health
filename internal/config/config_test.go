@@ -260,6 +260,30 @@ func TestConfigValidator_Validate_Success_WhenTokenAndPasswordBothSet(t *testing
 	}
 }
 
+func TestConfigValidator_Validate_Success_WhenMQTypeConfigured(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Dependencies.MQ.Type = "rocksmq"
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidator_Validate_Fail_WhenMQTypeInvalid(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Dependencies.MQ.Type = "rabbitmq"
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "dependencies.mq.type")
+}
+
 func TestDefaultValueApplier_Apply(t *testing.T) {
 	t.Parallel()
 

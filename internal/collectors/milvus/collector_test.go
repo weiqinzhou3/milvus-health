@@ -44,6 +44,29 @@ func TestCollector_CollectClusterInfo(t *testing.T) {
 	}
 }
 
+func TestCollector_CollectClusterInfo_PreservesConfiguredMQType(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.Dependencies.MQ.Type = "rocksmq"
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{Version: "v2.4.7"},
+		},
+	}
+
+	info, err := collector.CollectClusterInfo(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("CollectClusterInfo() error = %v", err)
+	}
+	if info.ArchProfile != model.ArchProfileV24 {
+		t.Fatalf("ArchProfile = %q, want %q", info.ArchProfile, model.ArchProfileV24)
+	}
+	if info.MQType != "rocksmq" {
+		t.Fatalf("MQType = %q, want rocksmq", info.MQType)
+	}
+}
+
 func TestCollector_CollectInventory(t *testing.T) {
 	t.Parallel()
 

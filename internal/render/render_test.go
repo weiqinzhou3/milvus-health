@@ -55,7 +55,7 @@ func sampleResult() *model.AnalysisResult {
 			K8s: model.K8sInventory{
 				Namespace: "milvus",
 				Pods:      []model.PodStatusSummary{{Name: "milvus-0", Phase: "Running", Ready: true}},
-				Services:  []model.ServiceInventory{{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}}},
+				Services:  []model.ServiceInventory{{Name: "attu", Type: "NodePort", Ports: []string{"3000:30031/tcp"}}},
 				Endpoints: []model.EndpointInventory{{Name: "milvus", Addresses: []string{"10.0.0.1"}}},
 			},
 		},
@@ -166,7 +166,7 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "Pod Detail:\n- milvus-0: phase=Running ready=true restart_count=0") {
 		t.Fatalf("detail=true should include pod detail: %s", out)
 	}
-	if !strings.Contains(string(out), "Service Detail:\n- milvus: type=ClusterIP ports=19530/tcp") {
+	if !strings.Contains(string(out), "Service Detail:\n- attu: type=NodePort ports=3000:30031/tcp") {
 		t.Fatalf("detail=true should include service detail: %s", out)
 	}
 	if !strings.Contains(string(out), "Endpoint Detail:\n- milvus: addresses=10.0.0.1") {

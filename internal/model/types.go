@@ -70,6 +70,9 @@ func parseMajorMinor(version string) (int, int, bool) {
 	if trimmed == "" {
 		return 0, 0, false
 	}
+	if trimmed[0] == 'v' || trimmed[0] == 'V' {
+		trimmed = trimmed[1:]
+	}
 
 	parts := strings.Split(trimmed, ".")
 	if len(parts) < 2 {
@@ -85,6 +88,21 @@ func parseMajorMinor(version string) (int, int, bool) {
 		return 0, 0, false
 	}
 	return major, minor, true
+}
+
+func NormalizeMQType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "pulsar":
+		return "pulsar"
+	case "kafka":
+		return "kafka"
+	case "rocksmq", "woodpecker":
+		return "rocksmq"
+	case "", "unknown":
+		return "unknown"
+	default:
+		return "unknown"
+	}
 }
 
 type ErrorCode string
@@ -128,11 +146,12 @@ func (e *AppError) Unwrap() error {
 }
 
 type Config struct {
-	Cluster    ClusterConfig `yaml:"cluster"`
-	K8s        K8sConfig     `yaml:"k8s"`
-	Probe      ProbeConfig   `yaml:"probe"`
-	Output     OutputConfig  `yaml:"output"`
-	TimeoutSec int           `yaml:"timeout_sec"`
+	Cluster      ClusterConfig      `yaml:"cluster"`
+	K8s          K8sConfig          `yaml:"k8s"`
+	Dependencies DependenciesConfig `yaml:"dependencies"`
+	Probe        ProbeConfig        `yaml:"probe"`
+	Output       OutputConfig       `yaml:"output"`
+	TimeoutSec   int                `yaml:"timeout_sec"`
 }
 
 type ClusterConfig struct {
@@ -150,6 +169,14 @@ type MilvusConfig struct {
 type K8sConfig struct {
 	Namespace  string `yaml:"namespace"`
 	Kubeconfig string `yaml:"kubeconfig"`
+}
+
+type DependenciesConfig struct {
+	MQ MQConfig `yaml:"mq"`
+}
+
+type MQConfig struct {
+	Type string `yaml:"type"`
 }
 
 type ProbeConfig struct {
