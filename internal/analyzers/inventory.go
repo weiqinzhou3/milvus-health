@@ -46,6 +46,7 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 			PodCount:                 input.Inventory.K8s.TotalPodCount,
 			ReadyPodCount:            input.Inventory.K8s.ReadyPodCount,
 			NotReadyPodCount:         input.Inventory.K8s.NotReadyPodCount,
+			ResourceUsageSource:      summaryResourceUsageSource(input),
 			MetricsAvailablePodCount: input.Inventory.K8s.MetricsAvailablePodCount,
 			ServiceCount:             len(input.Inventory.K8s.Services),
 			EndpointCount:            len(input.Inventory.K8s.Endpoints),
@@ -192,6 +193,19 @@ func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 		})
 	}
 
+	resourceUsageDisabled := input.Inventory.K8s.ResourceUsageSource == model.K8sResourceUsageSourceDisabled ||
+		input.Inventory.K8s.ResourceUnavailableReason == model.MetricsUnavailableReasonDisabled
+	if resourceUsageDisabled {
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category: "k8s",
+			Name:     "k8s-resource-usage",
+			Status:   model.CheckStatusSkip,
+			Target:   input.Inventory.K8s.Namespace,
+			Message:  "resource usage disabled by config",
+		})
+		return
+	}
+
 	if !input.Inventory.K8s.ResourceUsageAvailable {
 		message := "pod resource usage unavailable"
 		if reason := string(input.Inventory.K8s.ResourceUnavailableReason); reason != "" {
@@ -204,7 +218,7 @@ func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 			Status:         model.CheckStatusWarn,
 			Target:         input.Inventory.K8s.Namespace,
 			Message:        message,
-			Recommendation: "install metrics-server or grant metrics.k8s.io read permissions",
+			Recommendation: "verify the configured resource usage source and metrics.k8s.io read permissions",
 		})
 		return
 	}
@@ -222,7 +236,7 @@ func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 			Status:         model.CheckStatusWarn,
 			Target:         input.Inventory.K8s.Namespace,
 			Message:        fmt.Sprintf("resource usage partial (%d/%d pods have metrics)", input.Inventory.K8s.MetricsAvailablePodCount, len(input.Inventory.K8s.Pods)),
-			Recommendation: "verify metrics-server coverage for the pods with unknown usage",
+			Recommendation: "verify the configured resource usage source coverage for the pods with unknown usage",
 		})
 	}
 
@@ -290,4 +304,14 @@ func normalizeElapsedMS(startedAt, endedAt time.Time) int64 {
 
 func exceedsWarnRatio(value *float64, threshold float64) bool {
 	return value != nil && *value > threshold
+}
+
+func summaryResourceUsageSource(input model.AnalyzeInput) model.K8sResourceUsageSource {
+	if input.Inventory.K8s.ResourceUsageSource != "" {
+		return input.Inventory.K8s.ResourceUsageSource
+	}
+	if input.Config != nil && input.Config.K8s.ResourceUsage.Source != "" {
+		return input.Config.K8s.ResourceUsage.Source
+	}
+	return model.K8sResourceUsageSourceAuto
 }

@@ -271,6 +271,101 @@ func TestAnalyzer_WarnsWhenResourceUsageUnavailable(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_SkipsWhenResourceUsageDisabledByConfig(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                 "milvus",
+				ResourceUsageSource:       model.K8sResourceUsageSourceDisabled,
+				ResourceUsageAvailable:    false,
+				ResourceUnavailableReason: model.MetricsUnavailableReasonDisabled,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultPASS {
+		t.Fatalf("Result = %s, want PASS", result.Result)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "metrics-server") {
+			t.Fatalf("Warnings should stay neutral when disabled: %#v", result.Warnings)
+		}
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-usage" && check.Status == model.CheckStatusSkip && check.Message == "resource usage disabled by config" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_WarnsWhenResourceUsagePermissionDenied(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                 "milvus",
+				TotalPodCount:             1,
+				ReadyPodCount:             1,
+				ResourceUsageAvailable:    false,
+				ResourceUnavailableReason: model.MetricsUnavailableReasonPermissionDenied,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-usage" && check.Status == model.CheckStatusWarn {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "insufficient permissions") {
+		t.Fatalf("Warnings = %#v", result.Warnings)
+	}
+}
+
 func TestAnalyzer_WarnsWhenResourceUsageIsPartial(t *testing.T) {
 	t.Parallel()
 

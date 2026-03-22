@@ -48,14 +48,9 @@ func (c DefaultCollector) Collect(ctx context.Context, cfg *model.Config) (model
 	if err != nil {
 		return model.K8sInventory{}, &model.AppError{Code: model.ErrCodeK8sCollect, Message: fmt.Sprintf("list endpoints: %v", err), Cause: err}
 	}
-	metricsResult, err := client.ListPodMetrics(ctx, namespace)
-	if err != nil {
-		return model.K8sInventory{}, &model.AppError{Code: model.ErrCodeK8sCollect, Message: fmt.Sprintf("list pod metrics: %v", err), Cause: err}
-	}
-
 	inventory := model.K8sInventory{
-		Namespace:              namespace,
-		ResourceUsageAvailable: metricsResult.Available,
+		Namespace:           namespace,
+		ResourceUsageSource: resolveResourceUsageSource(cfg),
 	}
 	for _, pod := range pods {
 		inventory.Pods = append(inventory.Pods, model.PodStatusSummary{
@@ -88,10 +83,28 @@ func (c DefaultCollector) Collect(ctx context.Context, cfg *model.Config) (model
 			Addresses: append([]string(nil), endpoint.Addresses...),
 		})
 	}
+	if inventory.ResourceUsageSource == model.K8sResourceUsageSourceDisabled {
+		inventory.ResourceUsageAvailable = false
+		inventory.ResourceUnavailableReason = model.MetricsUnavailableReasonDisabled
+		return inventory, nil
+	}
+
+	metricsResult, err := client.ListPodMetrics(ctx, namespace)
+	if err != nil {
+		return model.K8sInventory{}, &model.AppError{Code: model.ErrCodeK8sCollect, Message: fmt.Sprintf("list pod metrics: %v", err), Cause: err}
+	}
+	inventory.ResourceUsageAvailable = metricsResult.Available
 	inventory.Pods, inventory.ResourceUnavailableReason, inventory.MetricsAvailablePodCount = mergeMetrics(inventory.Pods, metricsResult)
 	inventory.ResourceUsagePartial = inventory.MetricsAvailablePodCount > 0 && inventory.MetricsAvailablePodCount < len(inventory.Pods)
 
 	return inventory, nil
+}
+
+func resolveResourceUsageSource(cfg *model.Config) model.K8sResourceUsageSource {
+	if cfg == nil || cfg.K8s.ResourceUsage.Source == "" {
+		return model.K8sResourceUsageSourceAuto
+	}
+	return cfg.K8s.ResourceUsage.Source
 }
 
 func mergeMetrics(

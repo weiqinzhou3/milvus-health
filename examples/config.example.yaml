@@ -9,6 +9,8 @@ cluster:
 k8s:
   namespace: milvus
   kubeconfig: examples/milvus-health-missing-kubeconfig
+  resource_usage:
+    source: auto
 
 probe:
   read:

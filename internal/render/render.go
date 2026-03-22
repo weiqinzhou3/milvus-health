@@ -44,11 +44,12 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		displayInt64(result.Summary.TotalRowCount),
 		result.Summary.PodCount,
 	)
-	fmt.Fprintf(&b, "K8s Summary: ready=%d not_ready=%d services=%d endpoints=%d resource_usage=%s\n",
+	fmt.Fprintf(&b, "K8s Summary: ready=%d not_ready=%d services=%d endpoints=%d resource_usage_source=%s resource_usage=%s\n",
 		result.Summary.ReadyPodCount,
 		result.Summary.NotReadyPodCount,
 		result.Summary.ServiceCount,
 		result.Summary.EndpointCount,
+		formatResourceUsageSource(result),
 		formatResourceUsageSummary(result),
 	)
 	if result.Inventory != nil {
@@ -76,13 +77,14 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 			}
 		}
 		if result.Inventory.K8s.Namespace != "" || len(result.Inventory.K8s.Pods) > 0 {
-			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d ready=%d not_ready=%d services=%d endpoints=%d resource_usage=%s\n",
+			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d ready=%d not_ready=%d services=%d endpoints=%d resource_usage_source=%s resource_usage=%s\n",
 				result.Inventory.K8s.Namespace,
 				len(result.Inventory.K8s.Pods),
 				result.Inventory.K8s.ReadyPodCount,
 				result.Inventory.K8s.NotReadyPodCount,
 				len(result.Inventory.K8s.Services),
 				len(result.Inventory.K8s.Endpoints),
+				displayString(string(result.Inventory.K8s.ResourceUsageSource), string(model.K8sResourceUsageSourceAuto)),
 				formatInventoryResourceUsageSummary(result.Inventory.K8s),
 			)
 			if len(result.Inventory.K8s.Pods) > 0 {
@@ -222,8 +224,17 @@ func formatResourceUsageSummary(result *model.AnalysisResult) string {
 	return formatInventoryResourceUsageSummary(result.Inventory.K8s)
 }
 
+func formatResourceUsageSource(result *model.AnalysisResult) string {
+	if result.Inventory == nil {
+		return displayString(string(result.Summary.ResourceUsageSource), string(model.K8sResourceUsageSourceAuto))
+	}
+	return displayString(string(result.Inventory.K8s.ResourceUsageSource), string(model.K8sResourceUsageSourceAuto))
+}
+
 func formatInventoryResourceUsageSummary(k8s model.K8sInventory) string {
 	switch {
+	case k8s.ResourceUnavailableReason == model.MetricsUnavailableReasonDisabled:
+		return "disabled"
 	case !k8s.ResourceUsageAvailable && k8s.ResourceUnavailableReason != "":
 		return string(k8s.ResourceUnavailableReason)
 	case k8s.ResourceUsagePartial:

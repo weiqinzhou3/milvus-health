@@ -19,6 +19,7 @@
     "pod_count": 0,
     "ready_pod_count": 0,
     "not_ready_pod_count": 0,
+    "resource_usage_source": "auto",
     "metrics_available_pod_count": 0,
     "service_count": 0,
     "endpoint_count": 0
