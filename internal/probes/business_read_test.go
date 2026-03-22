@@ -3,8 +3,10 @@ package probes_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/weiqinzhou3/milvus-health/internal/config"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
 	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
 	"github.com/weiqinzhou3/milvus-health/internal/probes"
@@ -82,6 +84,49 @@ func TestBusinessReadProbe_Run_QuerySuccess(t *testing.T) {
 	}
 	if client.LastQueryRequest.Expr != "id >= 0" || client.LastQueryRequest.Limit != 1 {
 		t.Fatalf("LastQueryRequest = %#v", client.LastQueryRequest)
+	}
+}
+
+func TestBusinessReadProbe_Run_UsesDefaultQueryExprWhenAppliedByDefaults(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		Descriptions: map[string]map[string]platformmilvus.CollectionDescription{
+			"default": {
+				"book": {ID: 1001, Name: "book", Fields: []platformmilvus.CollectionField{{Name: "id", DataType: "Int64", IsPrimaryKey: true}}},
+			},
+		},
+		QueryResults: map[string]map[string]platformmilvus.QueryResult{
+			"default": {"book": {ResultCount: 1}},
+		},
+	}
+	cfg := &model.Config{
+		Cluster: model.ClusterConfig{
+			Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+		},
+		TimeoutSec: 30,
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+				}},
+			},
+		},
+	}
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	result, err := (probes.DefaultBusinessReadProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+	}).Run(context.Background(), cfg, probes.ProbeScope{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusPass {
+		t.Fatalf("Status = %s, want pass", result.Status)
+	}
+	if client.LastQueryRequest.Expr != "id >= 0" {
+		t.Fatalf("LastQueryRequest.Expr = %q, want %q", client.LastQueryRequest.Expr, "id >= 0")
 	}
 }
 
@@ -191,4 +236,147 @@ func TestBusinessReadProbe_Run_WarnsWhenSuccessBelowMinimum(t *testing.T) {
 	if result.SuccessfulTargets != 1 || result.ConfiguredTargets != 2 {
 		t.Fatalf("result = %#v", result)
 	}
+}
+
+func TestBusinessReadProbe_Run_SkipsWhenScopeFiltersAllTargets(t *testing.T) {
+	t.Parallel()
+
+	cfg := &model.Config{
+		Cluster: model.ClusterConfig{
+			Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+		},
+		TimeoutSec: 30,
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				MinSuccessTargets: 1,
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+					QueryExpr:  "id >= 0",
+				}},
+			},
+		},
+	}
+
+	result, err := (probes.DefaultBusinessReadProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: &platformmilvus.FakeClient{}},
+	}).Run(context.Background(), cfg, probes.ProbeScope{Collection: "movie"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusSkip {
+		t.Fatalf("Status = %s, want skip", result.Status)
+	}
+	if result.ConfiguredTargets != 0 || result.SuccessfulTargets != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Message != "all targets filtered out" {
+		t.Fatalf("Message = %q, want %q", result.Message, "all targets filtered out")
+	}
+}
+
+func TestBusinessReadProbe_Run_FailsWhenNoTargetsSucceedEvenIfMinSuccessTargetsZero(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		Descriptions: map[string]map[string]platformmilvus.CollectionDescription{
+			"default": {
+				"book": {ID: 1001, Name: "book", Fields: []platformmilvus.CollectionField{{Name: "id", DataType: "Int64", IsPrimaryKey: true}}},
+			},
+		},
+		QueryErrs: map[string]map[string]error{
+			"default": {"book": errors.New("query failed")},
+		},
+	}
+	cfg := &model.Config{
+		Cluster: model.ClusterConfig{
+			Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+		},
+		TimeoutSec: 30,
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				MinSuccessTargets: 0,
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+					QueryExpr:  "id >= 0",
+				}},
+			},
+		},
+	}
+
+	result, err := (probes.DefaultBusinessReadProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+	}).Run(context.Background(), cfg, probes.ProbeScope{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if result.Message != "no read probe targets succeeded" {
+		t.Fatalf("Message = %q, want %q", result.Message, "no read probe targets succeeded")
+	}
+}
+
+func TestBusinessReadProbe_Run_PreservesTargetLevelEvidenceOnFailure(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		Descriptions: map[string]map[string]platformmilvus.CollectionDescription{
+			"default": {
+				"book": {ID: 1001, Name: "book", Fields: []platformmilvus.CollectionField{{Name: "id", DataType: "Int64", IsPrimaryKey: true}}},
+			},
+		},
+		RowCountErrs: map[string]map[string]error{
+			"default": {"book": errors.New("stats unavailable")},
+		},
+		LoadStateErrs: map[string]map[string]error{
+			"default": {"book": errors.New("load state timeout")},
+		},
+		QueryErrs: map[string]map[string]error{
+			"default": {"book": errors.New("query failed")},
+		},
+	}
+	cfg := &model.Config{
+		Cluster: model.ClusterConfig{
+			Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+		},
+		TimeoutSec: 30,
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				MinSuccessTargets: 1,
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+					QueryExpr:  "id >= 0",
+				}},
+			},
+		},
+	}
+
+	result, err := (probes.DefaultBusinessReadProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+	}).Run(context.Background(), cfg, probes.ProbeScope{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if len(result.Targets) != 1 {
+		t.Fatalf("Targets = %#v", result.Targets)
+	}
+	if got := result.Targets[0].Error; got == "" || !containsAll(got, "row count unavailable: stats unavailable", "load state unavailable: load state timeout", "query failed: query failed") {
+		t.Fatalf("target error = %q", got)
+	}
+}
+
+func containsAll(s string, tokens ...string) bool {
+	for _, token := range tokens {
+		if !strings.Contains(s, token) {
+			return false
+		}
+	}
+	return true
 }

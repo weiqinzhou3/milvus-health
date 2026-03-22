@@ -182,7 +182,7 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 					input.Failures = append(input.Failures, probeErr.Error())
 				}
 			}
-			if r.RWProbe != nil {
+			if r.RWProbe != nil && cfg.Probe.RW.Enabled {
 				rwResult, rwErr := r.RWProbe.Run(ctx, cfg)
 				input.Snapshot.RWProbe = rwResult
 				if rwErr != nil {

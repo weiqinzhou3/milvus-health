@@ -59,6 +59,9 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 	}
 
 	switch {
+	case result.SuccessfulTargets == 0:
+		result.Status = model.CheckStatusFail
+		result.Message = "no read probe targets succeeded"
 	case result.SuccessfulTargets >= result.MinSuccessTargets:
 		result.Status = model.CheckStatusPass
 		result.Message = fmt.Sprintf("%d/%d read probe targets succeeded", result.SuccessfulTargets, result.ConfiguredTargets)

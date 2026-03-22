@@ -273,6 +273,21 @@ func TestJSONRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_DetailTrue_IncludesBusinessReadTargets(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if !strings.Contains(string(out), "\"targets\"") {
+		t.Fatalf("detail=true should include business read targets: %s", out)
+	}
+	if !strings.Contains(string(out), "\"action\": \"query\"") {
+		t.Fatalf("detail=true should preserve target action detail: %s", out)
+	}
+}
+
 func TestJSONRenderer_DetailFalse_OmitsBusinessReadTargets(t *testing.T) {
 	t.Parallel()
 
