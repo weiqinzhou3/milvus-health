@@ -16,9 +16,26 @@ func TestCollector_ReturnsInventory_FromFakeClient(t *testing.T) {
 	collector := k8s.DefaultCollector{
 		Factory: platformk8s.FakeClientFactory{
 			Client: &platformk8s.FakeClient{
-				Pods:      []platformk8s.Pod{{Name: "milvus-0", Phase: "Running", Ready: true, RestartCount: 1}},
+				Pods: []platformk8s.Pod{{
+					Name:          "milvus-0",
+					Phase:         "Running",
+					Ready:         true,
+					RestartCount:  1,
+					CPURequest:    "500m",
+					CPULimit:      "1000m",
+					MemoryRequest: "512Mi",
+					MemoryLimit:   "1Gi",
+				}},
 				Services:  []platformk8s.Service{{Name: "attu", Type: "NodePort", Ports: []string{"3000:30031/tcp"}}},
 				Endpoints: []platformk8s.Endpoint{{Name: "milvus-abc", Addresses: []string{"10.0.0.1"}}},
+				Metrics: platformk8s.PlatformMetricsResult{
+					Available: true,
+					Metrics: []platformk8s.PodMetric{{
+						PodName:     "milvus-0",
+						CPUUsage:    "125m",
+						MemoryUsage: "256Mi",
+					}},
+				},
 			},
 		},
 	}
@@ -30,11 +47,61 @@ func TestCollector_ReturnsInventory_FromFakeClient(t *testing.T) {
 	if len(inventory.Pods) != 1 || inventory.Pods[0].Name != "milvus-0" {
 		t.Fatalf("Pods = %#v", inventory.Pods)
 	}
+	if !inventory.ResourceUsageAvailable || inventory.MetricsAvailablePodCount != 1 || inventory.ResourceUsagePartial {
+		t.Fatalf("Resource usage summary = %#v", inventory)
+	}
+	if inventory.Pods[0].CPUUsage != "125m" || inventory.Pods[0].MemoryUsage != "256Mi" {
+		t.Fatalf("Pod metrics = %#v", inventory.Pods[0])
+	}
+	if inventory.Pods[0].CPULimitRatio == nil || *inventory.Pods[0].CPULimitRatio != 0.125 {
+		t.Fatalf("Pod cpu limit ratio = %#v", inventory.Pods[0].CPULimitRatio)
+	}
+	if inventory.Pods[0].MemoryRequestRatio == nil || *inventory.Pods[0].MemoryRequestRatio != 0.5 {
+		t.Fatalf("Pod memory request ratio = %#v", inventory.Pods[0].MemoryRequestRatio)
+	}
 	if len(inventory.Services) != 1 || inventory.Services[0].Name != "attu" || inventory.Services[0].Ports[0] != "3000:30031/tcp" {
 		t.Fatalf("Services = %#v", inventory.Services)
 	}
 	if len(inventory.Endpoints) != 1 || inventory.Endpoints[0].Name != "milvus-abc" {
 		t.Fatalf("Endpoints = %#v", inventory.Endpoints)
+	}
+}
+
+func TestCollector_RecordsMetricsUnavailableReasonWithoutFailing(t *testing.T) {
+	t.Parallel()
+
+	collector := k8s.DefaultCollector{
+		Factory: platformk8s.FakeClientFactory{
+			Client: &platformk8s.FakeClient{
+				Pods: []platformk8s.Pod{{
+					Name:          "milvus-0",
+					Phase:         "Running",
+					Ready:         true,
+					CPURequest:    "500m",
+					CPULimit:      "1000m",
+					MemoryRequest: "512Mi",
+					MemoryLimit:   "1Gi",
+				}},
+				Metrics: platformk8s.PlatformMetricsResult{
+					Available:         false,
+					UnavailableReason: "metrics-server not found",
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.Collect(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	if inventory.ResourceUsageAvailable {
+		t.Fatalf("ResourceUsageAvailable = true, want false")
+	}
+	if inventory.ResourceUnavailableReason != model.MetricsUnavailableReasonNotFound {
+		t.Fatalf("ResourceUnavailableReason = %q", inventory.ResourceUnavailableReason)
+	}
+	if inventory.Pods[0].CPULimitRatio != nil || inventory.Pods[0].MemoryLimitRatio != nil {
+		t.Fatalf("Ratios should be nil when metrics are unavailable: %#v", inventory.Pods[0])
 	}
 }
 

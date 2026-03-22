@@ -19,6 +19,9 @@ func analysisConfig() *model.Config {
 			},
 		},
 		K8s: model.K8sConfig{Namespace: "milvus"},
+		Rules: model.RulesConfig{
+			ResourceWarnRatio: 0.85,
+		},
 		Probe: model.ProbeConfig{
 			RW: model.RWProbeConfig{Enabled: false},
 		},
@@ -122,7 +125,10 @@ func TestAnalyzer_AddsK8sWarningsForNotReadyAndRestartedPods(t *testing.T) {
 		Config: analysisConfig(),
 		Inventory: model.ClusterInventory{
 			K8s: model.K8sInventory{
-				Namespace: "milvus",
+				Namespace:        "milvus",
+				TotalPodCount:    2,
+				ReadyPodCount:    1,
+				NotReadyPodCount: 1,
 				Pods: []model.PodStatusSummary{
 					{Name: "proxy-0", Phase: "Running", Ready: false, RestartCount: 2},
 					{Name: "querynode-0", Phase: "Running", Ready: true, RestartCount: 0},
@@ -155,7 +161,7 @@ func TestAnalyzer_AddsK8sWarningsForNotReadyAndRestartedPods(t *testing.T) {
 	if result.Result != model.FinalResultWARN {
 		t.Fatalf("Result = %s, want WARN", result.Result)
 	}
-	if result.Summary.PodCount != 2 || result.Summary.ServiceCount != 1 || result.Summary.EndpointCount != 1 {
+	if result.Summary.PodCount != 2 || result.Summary.ReadyPodCount != 1 || result.Summary.NotReadyPodCount != 1 || result.Summary.ServiceCount != 1 || result.Summary.EndpointCount != 1 {
 		t.Fatalf("Summary = %#v", result.Summary)
 	}
 	if len(result.Warnings) != 2 {
@@ -183,7 +189,8 @@ func TestAnalyzer_SkipsK8sPodHealthWhenArchUnknown(t *testing.T) {
 		Config: analysisConfig(),
 		Inventory: model.ClusterInventory{
 			K8s: model.K8sInventory{
-				Namespace: "milvus",
+				Namespace:     "milvus",
+				TotalPodCount: 1,
 				Pods: []model.PodStatusSummary{
 					{Name: "proxy-0", Phase: "Running", Ready: false, RestartCount: 1},
 				},
@@ -212,6 +219,104 @@ func TestAnalyzer_SkipsK8sPodHealthWhenArchUnknown(t *testing.T) {
 		}
 	}
 	if !foundSkip {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_WarnsWhenResourceUsageUnavailable(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                 "milvus",
+				TotalPodCount:             2,
+				ReadyPodCount:             2,
+				ResourceUsageAvailable:    false,
+				ResourceUnavailableReason: model.MetricsUnavailableReasonNotFound,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true},
+					{Name: "querynode-0", Phase: "Running", Ready: true},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-usage" && check.Status == model.CheckStatusWarn {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "metrics-server not found") {
+		t.Fatalf("Warnings = %#v", result.Warnings)
+	}
+}
+
+func TestAnalyzer_WarnsWhenResourceUsageIsPartial(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			K8s: model.K8sInventory{
+				Namespace:                "milvus",
+				TotalPodCount:            2,
+				ReadyPodCount:            2,
+				ResourceUsageAvailable:   true,
+				ResourceUsagePartial:     true,
+				MetricsAvailablePodCount: 1,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true, CPULimitRatio: float64Ptr(0.9)},
+					{Name: "querynode-0", Phase: "Running", Ready: true},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	foundPartial := false
+	foundRatio := false
+	for _, check := range result.Checks {
+		if check.Name == "k8s-resource-usage" && check.Status == model.CheckStatusWarn {
+			foundPartial = true
+		}
+		if check.Name == "k8s-resource-ratio" && check.Status == model.CheckStatusWarn {
+			foundRatio = true
+		}
+	}
+	if !foundPartial || !foundRatio {
 		t.Fatalf("Checks = %#v", result.Checks)
 	}
 }
@@ -345,5 +450,9 @@ func TestAnalyzer_LowersConfidenceWhenSkipChecksPresent(t *testing.T) {
 }
 
 func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func float64Ptr(v float64) *float64 {
 	return &v
 }
