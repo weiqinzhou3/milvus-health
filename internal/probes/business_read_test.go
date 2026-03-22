@@ -192,3 +192,47 @@ func TestBusinessReadProbe_Run_WarnsWhenSuccessBelowMinimum(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 }
+
+func TestBusinessReadProbe_Run_FailsWhenNoTargetsSucceedEvenIfMinSuccessTargetsZero(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		Descriptions: map[string]map[string]platformmilvus.CollectionDescription{
+			"default": {
+				"book": {ID: 1001, Name: "book", Fields: []platformmilvus.CollectionField{{Name: "id", DataType: "Int64", IsPrimaryKey: true}}},
+			},
+		},
+		QueryErrs: map[string]map[string]error{
+			"default": {"book": errors.New("query failed")},
+		},
+	}
+	cfg := &model.Config{
+		Cluster: model.ClusterConfig{
+			Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+		},
+		TimeoutSec: 30,
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				MinSuccessTargets: 0,
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+					QueryExpr:  "id >= 0",
+				}},
+			},
+		},
+	}
+
+	result, err := (probes.DefaultBusinessReadProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+	}).Run(context.Background(), cfg, probes.ProbeScope{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if result.Message != "no read probe targets succeeded" {
+		t.Fatalf("Message = %q, want %q", result.Message, "no read probe targets succeeded")
+	}
+}
