@@ -484,6 +484,71 @@ func TestAnalyzer_WarnsWhenCollectionBinlogSizeIsPartial(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_BinlogSizeTotallyUnavailable_WarnsNotFails(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			Milvus: model.MilvusInventory{
+				DatabaseCount:        1,
+				CollectionCount:      2,
+				TotalBinlogSizeBytes: nil,
+				TotalRowCount:        int64Ptr(30),
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book", "movie"}},
+				},
+				Collections: []model.CollectionInventory{
+					{Database: "default", Name: "book", RowCount: int64Ptr(10), BinlogSizeBytes: nil},
+					{Database: "default", Name: "movie", RowCount: int64Ptr(20), BinlogSizeBytes: nil},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
+			{Name: "milvus-inventory", Status: model.CheckStatusPass, Message: "Milvus inventory collected successfully"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	// Must be WARN, not FAIL — binlog size unavailability is a degrade, not a fatal failure.
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	// Total binlog size must remain nil (unknown).
+	if result.Summary.TotalBinlogSizeBytes != nil {
+		t.Fatalf("Summary.TotalBinlogSizeBytes = %#v, want nil", result.Summary.TotalBinlogSizeBytes)
+	}
+	// Must emit milvus-binlog-size WARN check.
+	foundCheck := false
+	for _, check := range result.Checks {
+		if check.Name == "milvus-binlog-size" && check.Status == model.CheckStatusWarn {
+			foundCheck = true
+		}
+	}
+	if !foundCheck {
+		t.Fatalf("expected milvus-binlog-size WARN check; got Checks=%#v", result.Checks)
+	}
+	// Both collections must appear in warnings.
+	warnText := strings.Join(result.Warnings, " ")
+	for _, col := range []string{"default.book", "default.movie"} {
+		if !strings.Contains(warnText, col) {
+			t.Fatalf("expected %q in warnings; Warnings=%#v", col, result.Warnings)
+		}
+	}
+}
+
 func TestAnalyzer_LowersConfidenceWhenSkipChecksPresent(t *testing.T) {
 	t.Parallel()
 

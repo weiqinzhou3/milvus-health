@@ -305,6 +305,50 @@ func TestRenderers_UseUnknownAndNullForMissingBinlogSize(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_Golden_BinlogUnknown(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Summary.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.Collections[0].BinlogSizeBytes = nil
+
+	out, err := (render.TextRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want, err := os.ReadFile(filepath.Join("testdata", "sample_detail_binlog_unknown.golden.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(want)) {
+		t.Fatalf("golden mismatch\nwant:\n%s\ngot:\n%s", want, out)
+	}
+}
+
+func TestJSONRenderer_Golden_BinlogUnknown(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Summary.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.Collections[0].BinlogSizeBytes = nil
+
+	out, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want, err := os.ReadFile(filepath.Join("testdata", "sample_detail_binlog_unknown.golden.json"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(out), bytes.TrimSpace(want)) {
+		t.Fatalf("golden mismatch\nwant:\n%s\ngot:\n%s", want, out)
+	}
+}
+
 func int64Ptr(v int64) *int64 {
 	return &v
 }

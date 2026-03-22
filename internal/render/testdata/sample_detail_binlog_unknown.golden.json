@@ -1,0 +1,134 @@
+{
+  "cluster": {
+    "name": "demo-cluster",
+    "milvus_uri": "localhost:19530",
+    "namespace": "milvus",
+    "milvus_version": "2.6.1",
+    "arch_profile": "v2.6",
+    "mq_type": "pulsar"
+  },
+  "result": "WARN",
+  "standby": false,
+  "confidence": "medium",
+  "exit_code": 1,
+  "elapsed_ms": 0,
+  "summary": {
+    "database_count": 1,
+    "collection_count": 1,
+    "total_row_count": 123,
+    "total_binlog_size_bytes": null,
+    "pod_count": 2,
+    "ready_pod_count": 1,
+    "not_ready_pod_count": 1,
+    "metrics_available_pod_count": 1,
+    "service_count": 1,
+    "endpoint_count": 1
+  },
+  "probes": {
+    "business_read": {
+      "status": "pass",
+      "configured_targets": 0,
+      "successful_targets": 0,
+      "min_success_targets": 0,
+      "message": "ok"
+    },
+    "rw": {
+      "status": "skip",
+      "enabled": false,
+      "message": "stub"
+    }
+  },
+  "inventory": {
+    "milvus": {
+      "reachable": true,
+      "server_version": "2.6.1",
+      "database_count": 1,
+      "collection_count": 1,
+      "total_row_count": 123,
+      "total_binlog_size_bytes": null,
+      "databases": [
+        {
+          "name": "default",
+          "collections": [
+            "book"
+          ]
+        }
+      ],
+      "collections": [
+        {
+          "database": "default",
+          "name": "book",
+          "collection_id": 1001,
+          "row_count": 123,
+          "binlog_size_bytes": null
+        }
+      ]
+    },
+    "k8s": {
+      "namespace": "milvus",
+      "arch_profile": "",
+      "total_pod_count": 2,
+      "ready_pod_count": 1,
+      "not_ready_pod_count": 1,
+      "resource_usage_available": true,
+      "resource_usage_partial": true,
+      "metrics_available_pod_count": 1,
+      "pods": [
+        {
+          "name": "milvus-0",
+          "phase": "Running",
+          "ready": true,
+          "restart_count": 0,
+          "cpu_usage": "125m",
+          "memory_usage": "256Mi",
+          "cpu_request": "500m",
+          "cpu_limit": "1",
+          "memory_request": "512Mi",
+          "memory_limit": "1Gi",
+          "cpu_limit_ratio": 0.125,
+          "memory_limit_ratio": 0.25,
+          "cpu_request_ratio": 0.25,
+          "memory_request_ratio": 0.5
+        },
+        {
+          "name": "milvus-1",
+          "phase": "Pending",
+          "ready": false,
+          "restart_count": 0,
+          "cpu_limit_ratio": null,
+          "memory_limit_ratio": null,
+          "cpu_request_ratio": null,
+          "memory_request_ratio": null
+        }
+      ],
+      "services": [
+        {
+          "name": "attu",
+          "type": "NodePort",
+          "ports": [
+            "3000:30031/tcp"
+          ]
+        }
+      ],
+      "endpoints": [
+        {
+          "name": "milvus",
+          "addresses": [
+            "10.0.0.1"
+          ]
+        }
+      ]
+    }
+  },
+  "checks": [
+    {
+      "name": "stub-check",
+      "status": "warn",
+      "message": "stub",
+      "recommendation": "inspect fake pipeline",
+      "evidence": [
+        "warn evidence"
+      ]
+    }
+  ]
+}

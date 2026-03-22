@@ -123,6 +123,47 @@ func TestCollector_CollectInventory(t *testing.T) {
 	}
 }
 
+func TestCollector_CollectInventory_UsesReportedTotalBinlogSizeFromMetrics(t *testing.T) {
+	t.Parallel()
+
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{
+				Databases: []string{"default"},
+				Collections: map[string][]string{
+					"default": {"book", "movie"},
+				},
+				CollectionIDs: map[string]map[string]int64{
+					"default": {"book": 1001, "movie": 1002},
+				},
+				RowCounts: map[string]map[string]int64{
+					"default": {"book": 999, "movie": 1},
+				},
+				MetricsByType: map[string]string{
+					"system_info": `{"quota_metrics":{"total_binlog_size":7777,"collection_binlog_size":{"1001":100,"1002":200}}}`,
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.CollectInventory(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("CollectInventory() error = %v", err)
+	}
+	if inventory.TotalBinlogSizeBytes == nil || *inventory.TotalBinlogSizeBytes != 7777 {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want 7777", inventory.TotalBinlogSizeBytes)
+	}
+	if inventory.TotalRowCount == nil || *inventory.TotalRowCount != 1000 {
+		t.Fatalf("TotalRowCount = %#v, want 1000", inventory.TotalRowCount)
+	}
+	if inventory.Collections[0].BinlogSizeBytes == nil || *inventory.Collections[0].BinlogSizeBytes != 100 {
+		t.Fatalf("Collections[0].BinlogSizeBytes = %#v, want 100", inventory.Collections[0].BinlogSizeBytes)
+	}
+	if inventory.Collections[1].BinlogSizeBytes == nil || *inventory.Collections[1].BinlogSizeBytes != 200 {
+		t.Fatalf("Collections[1].BinlogSizeBytes = %#v, want 200", inventory.Collections[1].BinlogSizeBytes)
+	}
+}
+
 func TestCollector_CollectClusterInfoReturnsAppErrorOnConnectFailure(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +216,9 @@ func TestCollector_CollectInventory_DegradesWhenCollectionRowCountUnavailable(t 
 	}
 	if inventory.TotalRowCount != nil {
 		t.Fatalf("TotalRowCount = %#v, want nil", inventory.TotalRowCount)
+	}
+	if inventory.TotalBinlogSizeBytes == nil || *inventory.TotalBinlogSizeBytes != 1000 {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want 1000", inventory.TotalBinlogSizeBytes)
 	}
 	if len(inventory.DegradedCapabilities) != 2 || inventory.DegradedCapabilities[0] != "row_count:default.movie" {
 		t.Fatalf("DegradedCapabilities = %#v", inventory.DegradedCapabilities)
@@ -231,5 +275,90 @@ func TestCollector_CollectInventory_DegradesWhenBinlogMetricsUnavailable(t *test
 	}
 	if inventory.Collections[0].RowCount == nil || *inventory.Collections[0].RowCount != 10 {
 		t.Fatalf("RowCount = %#v, want 10", inventory.Collections[0].RowCount)
+	}
+}
+
+func TestCollector_CollectInventory_DegradesWhenBinlogMetricsPayloadIsMalformed(t *testing.T) {
+	t.Parallel()
+
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{
+				Databases: []string{"default"},
+				Collections: map[string][]string{
+					"default": {"book"},
+				},
+				CollectionIDs: map[string]map[string]int64{
+					"default": {"book": 1001},
+				},
+				RowCounts: map[string]map[string]int64{
+					"default": {"book": 10},
+				},
+				MetricsByType: map[string]string{
+					"system_info": `{"quota_metrics":{"total_binlog_size":"oops","collection_binlog_size":{"1001":123}}}`,
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.CollectInventory(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("CollectInventory() error = %v", err)
+	}
+	if !inventory.CapabilityDegraded {
+		t.Fatal("CapabilityDegraded = false, want true")
+	}
+	if inventory.TotalBinlogSizeBytes != nil {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want nil", inventory.TotalBinlogSizeBytes)
+	}
+	if len(inventory.DegradedCapabilities) != 1 || inventory.DegradedCapabilities[0] != "binlog_size" {
+		t.Fatalf("DegradedCapabilities = %#v", inventory.DegradedCapabilities)
+	}
+	if inventory.Collections[0].BinlogSizeBytes != nil {
+		t.Fatalf("BinlogSizeBytes = %#v, want nil", inventory.Collections[0].BinlogSizeBytes)
+	}
+	if inventory.Collections[0].RowCount == nil || *inventory.Collections[0].RowCount != 10 {
+		t.Fatalf("RowCount = %#v, want 10", inventory.Collections[0].RowCount)
+	}
+}
+
+func TestCollector_CollectInventory_ParsesNestedBinlogMetrics(t *testing.T) {
+	t.Parallel()
+
+	// quota_metrics is nested inside an outer object — exercises findBinlogMetrics recursive traversal.
+	nestedJSON := `{"system_info":{"quota_metrics":{"total_binlog_size":500,"collection_binlog_size":{"1001":500}}}}`
+
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{
+				Databases: []string{"default"},
+				Collections: map[string][]string{
+					"default": {"book"},
+				},
+				CollectionIDs: map[string]map[string]int64{
+					"default": {"book": 1001},
+				},
+				RowCounts: map[string]map[string]int64{
+					"default": {"book": 5},
+				},
+				MetricsByType: map[string]string{
+					"system_info": nestedJSON,
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.CollectInventory(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("CollectInventory() error = %v", err)
+	}
+	if inventory.CapabilityDegraded {
+		t.Fatalf("CapabilityDegraded = true, want false; DegradedCapabilities=%v", inventory.DegradedCapabilities)
+	}
+	if inventory.TotalBinlogSizeBytes == nil || *inventory.TotalBinlogSizeBytes != 500 {
+		t.Fatalf("TotalBinlogSizeBytes = %#v, want 500", inventory.TotalBinlogSizeBytes)
+	}
+	if inventory.Collections[0].BinlogSizeBytes == nil || *inventory.Collections[0].BinlogSizeBytes != 500 {
+		t.Fatalf("Collections[0].BinlogSizeBytes = %#v, want 500", inventory.Collections[0].BinlogSizeBytes)
 	}
 }
