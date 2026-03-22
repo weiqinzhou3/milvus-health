@@ -109,6 +109,33 @@ func TestClientGoClient_ListEndpoints_FallsBackToCoreEndpoints(t *testing.T) {
 	}
 }
 
+func TestClientGoClient_NodePortWithZeroNodePort_FallsBackToPlainFormat(t *testing.T) {
+	t.Parallel()
+
+	// A NodePort-type service whose NodePort field is 0 must render as plain "port/protocol",
+	// not "port:0/protocol". The guard `port.NodePort > 0` prevents the colon form.
+	clientset := fake.NewSimpleClientset(
+		&corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: "milvus"},
+			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeNodePort,
+				Ports: []corev1.ServicePort{
+					{Port: 8080, NodePort: 0, Protocol: corev1.ProtocolTCP},
+				},
+			},
+		},
+	)
+	client := &clientGoClient{clientset: clientset}
+
+	services, err := client.ListServices(context.Background(), "milvus")
+	if err != nil {
+		t.Fatalf("ListServices() error = %v", err)
+	}
+	if len(services) != 1 || services[0].Ports[0] != "8080/tcp" {
+		t.Fatalf("ListServices() = %#v, want port string \"8080/tcp\"", services)
+	}
+}
+
 func TestShouldFallbackToEndpoints(t *testing.T) {
 	t.Parallel()
 

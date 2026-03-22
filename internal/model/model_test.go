@@ -22,6 +22,8 @@ func TestDetectArchProfile(t *testing.T) {
 		{name: "2.6.12 -> v2.6", version: "2.6.12", want: model.ArchProfileV26},
 		{name: "2.7.1 -> v2.6", version: "2.7.1", want: model.ArchProfileV26},
 		{name: "3.0.0 -> v2.6", version: "3.0.0", want: model.ArchProfileV26},
+		{name: "V2.4.7 uppercase V -> v2.4", version: "V2.4.7", want: model.ArchProfileV24},
+		{name: "V2.6.1 uppercase V -> v2.6", version: "V2.6.1", want: model.ArchProfileV26},
 		{name: "2.3.9 -> unknown", version: "2.3.9", want: model.ArchProfileUnknown},
 		{name: "empty -> unknown", version: "", want: model.ArchProfileUnknown},
 		{name: "invalid -> unknown", version: "bad.version", want: model.ArchProfileUnknown},

@@ -36,6 +36,16 @@ func TestResolveMQType(t *testing.T) {
 			want: "rocksmq",
 		},
 		{
+			// woodpecker is a spec-listed alias for rocksmq; config value "woodpecker" must normalize to "rocksmq"
+			name: "uses config woodpecker alias -> rocksmq",
+			cfg: &model.Config{
+				Dependencies: model.DependenciesConfig{
+					MQ: model.MQConfig{Type: "woodpecker"},
+				},
+			},
+			want: "rocksmq",
+		},
+		{
 			name: "uses service pulsar signature",
 			inventory: model.K8sInventory{
 				Services: []model.ServiceInventory{
