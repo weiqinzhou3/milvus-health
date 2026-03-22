@@ -83,6 +83,9 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 	if rawMQType := strings.TrimSpace(cfg.Dependencies.MQ.Type); rawMQType != "" && model.NormalizeMQType(rawMQType) == "unknown" {
 		fields = append(fields, FieldError{Field: "dependencies.mq.type", Message: "must be pulsar, kafka, rocksmq, unknown, or woodpecker"})
 	}
+	if cfg.Rules.ResourceWarnRatio <= 0 || cfg.Rules.ResourceWarnRatio > 1 {
+		fields = append(fields, FieldError{Field: "rules.resource_warn_ratio", Message: "must be in (0, 1]"})
+	}
 	switch cfg.Output.Format {
 	case model.OutputFormatText, model.OutputFormatJSON:
 	default:
@@ -143,6 +146,9 @@ func (DefaultValueApplier) Apply(cfg *model.Config) {
 	}
 	if cfg.TimeoutSec == 0 {
 		cfg.TimeoutSec = 60
+	}
+	if cfg.Rules.ResourceWarnRatio == 0 {
+		cfg.Rules.ResourceWarnRatio = 0.85
 	}
 }
 

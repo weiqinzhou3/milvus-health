@@ -37,6 +37,7 @@ func validConfig() *model.Config {
 				VectorDim:          128,
 			},
 		},
+		Rules:  model.RulesConfig{ResourceWarnRatio: 0.85},
 		Output: model.OutputConfig{Format: model.OutputFormatText},
 	}
 }
@@ -123,6 +124,19 @@ func TestDefaultValueApplier_Apply_PreservesExplicitPositiveMinSuccessTargets(t 
 	}
 }
 
+func TestDefaultValueApplier_Apply_DefaultsResourceWarnRatioWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Rules.ResourceWarnRatio = 0
+
+	(config.DefaultValueApplier{}).Apply(cfg)
+
+	if cfg.Rules.ResourceWarnRatio != 0.85 {
+		t.Fatalf("Rules.ResourceWarnRatio = %v, want 0.85", cfg.Rules.ResourceWarnRatio)
+	}
+}
+
 func TestConfigValidator_Validate_Success_MinimalConfig(t *testing.T) {
 	t.Parallel()
 
@@ -149,6 +163,17 @@ func TestConfigValidator_Validate_Fail_WhenURIHasScheme(t *testing.T) {
 
 	cfg := validConfig()
 	cfg.Cluster.Milvus.URI = "tcp://host:19530"
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
+		t.Fatal("Validate() expected error")
+	}
+}
+
+func TestConfigValidator_Validate_Fail_WhenResourceWarnRatioOutOfRange(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Rules.ResourceWarnRatio = 1.1
 
 	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
 		t.Fatal("Validate() expected error")

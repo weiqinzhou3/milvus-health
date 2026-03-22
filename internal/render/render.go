@@ -44,7 +44,13 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		displayInt64(result.Summary.TotalRowCount),
 		result.Summary.PodCount,
 	)
-	fmt.Fprintf(&b, "K8s Summary: services=%d endpoints=%d\n", result.Summary.ServiceCount, result.Summary.EndpointCount)
+	fmt.Fprintf(&b, "K8s Summary: ready=%d not_ready=%d services=%d endpoints=%d resource_usage=%s\n",
+		result.Summary.ReadyPodCount,
+		result.Summary.NotReadyPodCount,
+		result.Summary.ServiceCount,
+		result.Summary.EndpointCount,
+		formatResourceUsageSummary(result),
+	)
 	if result.Inventory != nil {
 		fmt.Fprintf(&b, "Databases: %s\n", formatDatabases(result.Inventory.Milvus.Databases))
 	}
@@ -70,11 +76,34 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 			}
 		}
 		if result.Inventory.K8s.Namespace != "" || len(result.Inventory.K8s.Pods) > 0 {
-			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d services=%d endpoints=%d\n", result.Inventory.K8s.Namespace, len(result.Inventory.K8s.Pods), len(result.Inventory.K8s.Services), len(result.Inventory.K8s.Endpoints))
+			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d ready=%d not_ready=%d services=%d endpoints=%d resource_usage=%s\n",
+				result.Inventory.K8s.Namespace,
+				len(result.Inventory.K8s.Pods),
+				result.Inventory.K8s.ReadyPodCount,
+				result.Inventory.K8s.NotReadyPodCount,
+				len(result.Inventory.K8s.Services),
+				len(result.Inventory.K8s.Endpoints),
+				formatInventoryResourceUsageSummary(result.Inventory.K8s),
+			)
 			if len(result.Inventory.K8s.Pods) > 0 {
 				b.WriteString("Pod Detail:\n")
 				for _, pod := range result.Inventory.K8s.Pods {
-					fmt.Fprintf(&b, "- %s: phase=%s ready=%t restart_count=%d\n", pod.Name, pod.Phase, pod.Ready, pod.RestartCount)
+					fmt.Fprintf(&b, "- %s: phase=%s ready=%t restart_count=%d cpu_usage=%s memory_usage=%s cpu_request=%s cpu_limit=%s memory_request=%s memory_limit=%s cpu_request_ratio=%s cpu_limit_ratio=%s memory_request_ratio=%s memory_limit_ratio=%s\n",
+						pod.Name,
+						pod.Phase,
+						pod.Ready,
+						pod.RestartCount,
+						displayString(pod.CPUUsage, "unknown"),
+						displayString(pod.MemoryUsage, "unknown"),
+						displayString(pod.CPURequest, "unknown"),
+						displayString(pod.CPULimit, "unknown"),
+						displayString(pod.MemoryRequest, "unknown"),
+						displayString(pod.MemoryLimit, "unknown"),
+						displayRatio(pod.CPURequestRatio),
+						displayRatio(pod.CPULimitRatio),
+						displayRatio(pod.MemoryRequestRatio),
+						displayRatio(pod.MemoryLimitRatio),
+					)
 				}
 			}
 			if len(result.Inventory.K8s.Services) > 0 {
@@ -171,6 +200,39 @@ func displayInt64(value *int64) string {
 		return "unknown"
 	}
 	return strconv.FormatInt(*value, 10)
+}
+
+func displayRatio(value *float64) string {
+	if value == nil {
+		return "unknown"
+	}
+	return strconv.FormatFloat(*value, 'f', 4, 64)
+}
+
+func formatResourceUsageSummary(result *model.AnalysisResult) string {
+	if result.Inventory == nil {
+		if result.Summary.MetricsAvailablePodCount > 0 && result.Summary.MetricsAvailablePodCount < result.Summary.PodCount {
+			return fmt.Sprintf("partial (%d/%d pods have metrics)", result.Summary.MetricsAvailablePodCount, result.Summary.PodCount)
+		}
+		if result.Summary.MetricsAvailablePodCount == result.Summary.PodCount && result.Summary.PodCount > 0 {
+			return "available"
+		}
+		return "unknown"
+	}
+	return formatInventoryResourceUsageSummary(result.Inventory.K8s)
+}
+
+func formatInventoryResourceUsageSummary(k8s model.K8sInventory) string {
+	switch {
+	case !k8s.ResourceUsageAvailable && k8s.ResourceUnavailableReason != "":
+		return string(k8s.ResourceUnavailableReason)
+	case k8s.ResourceUsagePartial:
+		return fmt.Sprintf("partial (%d/%d pods have metrics)", k8s.MetricsAvailablePodCount, len(k8s.Pods))
+	case k8s.ResourceUsageAvailable:
+		return fmt.Sprintf("available (%d/%d pods have metrics)", k8s.MetricsAvailablePodCount, len(k8s.Pods))
+	default:
+		return "unknown"
+	}
 }
 
 func formatDatabases(databases []model.DatabaseInventory) string {

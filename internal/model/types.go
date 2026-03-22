@@ -39,6 +39,15 @@ const (
 	ConfidenceLow    ConfidenceLevel = "low"
 )
 
+type MetricsUnavailableReason string
+
+const (
+	MetricsUnavailableReasonNone             MetricsUnavailableReason = ""
+	MetricsUnavailableReasonNotFound         MetricsUnavailableReason = "metrics-server not found"
+	MetricsUnavailableReasonPermissionDenied MetricsUnavailableReason = "insufficient permissions"
+	MetricsUnavailableReasonUnknown          MetricsUnavailableReason = "unknown"
+)
+
 type MilvusArchProfile string
 
 const (
@@ -150,6 +159,7 @@ type Config struct {
 	K8s          K8sConfig          `yaml:"k8s"`
 	Dependencies DependenciesConfig `yaml:"dependencies"`
 	Probe        ProbeConfig        `yaml:"probe"`
+	Rules        RulesConfig        `yaml:"rules"`
 	Output       OutputConfig       `yaml:"output"`
 	TimeoutSec   int                `yaml:"timeout_sec"`
 }
@@ -232,6 +242,10 @@ type RWProbeConfig struct {
 	VectorDim          int    `yaml:"vector_dim"`
 }
 
+type RulesConfig struct {
+	ResourceWarnRatio float64 `yaml:"resource_warn_ratio"`
+}
+
 type OutputConfig struct {
 	Format OutputFormat `yaml:"format"`
 	Detail bool         `yaml:"detail"`
@@ -270,12 +284,15 @@ type CheckResult struct {
 }
 
 type AnalysisSummary struct {
-	DatabaseCount   int    `json:"database_count"`
-	CollectionCount int    `json:"collection_count"`
-	TotalRowCount   *int64 `json:"total_row_count"`
-	PodCount        int    `json:"pod_count"`
-	ServiceCount    int    `json:"service_count"`
-	EndpointCount   int    `json:"endpoint_count"`
+	DatabaseCount            int    `json:"database_count"`
+	CollectionCount          int    `json:"collection_count"`
+	TotalRowCount            *int64 `json:"total_row_count"`
+	PodCount                 int    `json:"pod_count"`
+	ReadyPodCount            int    `json:"ready_pod_count"`
+	NotReadyPodCount         int    `json:"not_ready_pod_count"`
+	MetricsAvailablePodCount int    `json:"metrics_available_pod_count"`
+	ServiceCount             int    `json:"service_count"`
+	EndpointCount            int    `json:"endpoint_count"`
 }
 
 type ClusterInventory struct {
@@ -310,17 +327,35 @@ type CollectionInventory struct {
 }
 
 type K8sInventory struct {
-	Namespace string              `json:"namespace,omitempty"`
-	Pods      []PodStatusSummary  `json:"pods,omitempty"`
-	Services  []ServiceInventory  `json:"services,omitempty"`
-	Endpoints []EndpointInventory `json:"endpoints,omitempty"`
+	Namespace                 string                   `json:"namespace,omitempty"`
+	ArchProfile               MilvusArchProfile        `json:"arch_profile"`
+	TotalPodCount             int                      `json:"total_pod_count"`
+	ReadyPodCount             int                      `json:"ready_pod_count"`
+	NotReadyPodCount          int                      `json:"not_ready_pod_count"`
+	ResourceUsageAvailable    bool                     `json:"resource_usage_available"`
+	ResourceUsagePartial      bool                     `json:"resource_usage_partial,omitempty"`
+	MetricsAvailablePodCount  int                      `json:"metrics_available_pod_count"`
+	ResourceUnavailableReason MetricsUnavailableReason `json:"resource_unavailable_reason,omitempty"`
+	Pods                      []PodStatusSummary       `json:"pods,omitempty"`
+	Services                  []ServiceInventory       `json:"services,omitempty"`
+	Endpoints                 []EndpointInventory      `json:"endpoints,omitempty"`
 }
 
 type PodStatusSummary struct {
-	Name         string `json:"name"`
-	Phase        string `json:"phase"`
-	Ready        bool   `json:"ready"`
-	RestartCount int32  `json:"restart_count"`
+	Name               string   `json:"name"`
+	Phase              string   `json:"phase"`
+	Ready              bool     `json:"ready"`
+	RestartCount       int32    `json:"restart_count"`
+	CPUUsage           string   `json:"cpu_usage,omitempty"`
+	MemoryUsage        string   `json:"memory_usage,omitempty"`
+	CPURequest         string   `json:"cpu_request,omitempty"`
+	CPULimit           string   `json:"cpu_limit,omitempty"`
+	MemoryRequest      string   `json:"memory_request,omitempty"`
+	MemoryLimit        string   `json:"memory_limit,omitempty"`
+	CPULimitRatio      *float64 `json:"cpu_limit_ratio"`
+	MemoryLimitRatio   *float64 `json:"memory_limit_ratio"`
+	CPURequestRatio    *float64 `json:"cpu_request_ratio"`
+	MemoryRequestRatio *float64 `json:"memory_request_ratio"`
 }
 
 type ServiceInventory struct {

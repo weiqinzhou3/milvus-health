@@ -2,6 +2,7 @@ package analyzers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -39,12 +40,15 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 		Standby:    false,
 		Confidence: model.ConfidenceHigh,
 		Summary: model.AnalysisSummary{
-			DatabaseCount:   input.Inventory.Milvus.DatabaseCount,
-			CollectionCount: input.Inventory.Milvus.CollectionCount,
-			TotalRowCount:   input.Inventory.Milvus.TotalRowCount,
-			PodCount:        len(input.Inventory.K8s.Pods),
-			ServiceCount:    len(input.Inventory.K8s.Services),
-			EndpointCount:   len(input.Inventory.K8s.Endpoints),
+			DatabaseCount:            input.Inventory.Milvus.DatabaseCount,
+			CollectionCount:          input.Inventory.Milvus.CollectionCount,
+			TotalRowCount:            input.Inventory.Milvus.TotalRowCount,
+			PodCount:                 input.Inventory.K8s.TotalPodCount,
+			ReadyPodCount:            input.Inventory.K8s.ReadyPodCount,
+			NotReadyPodCount:         input.Inventory.K8s.NotReadyPodCount,
+			MetricsAvailablePodCount: input.Inventory.K8s.MetricsAvailablePodCount,
+			ServiceCount:             len(input.Inventory.K8s.Services),
+			EndpointCount:            len(input.Inventory.K8s.Endpoints),
 		},
 		Probes: model.ProbeOutputView{
 			BusinessRead: model.BusinessReadProbeResult{
@@ -132,12 +136,16 @@ func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 
 	notReadyPods := make([]string, 0)
 	restartedPods := make([]string, 0)
+	resourceWarnPods := make([]string, 0)
 	for _, pod := range input.Inventory.K8s.Pods {
 		if !pod.Ready {
 			notReadyPods = append(notReadyPods, pod.Name)
 		}
 		if pod.RestartCount > 0 {
 			restartedPods = append(restartedPods, pod.Name)
+		}
+		if exceedsWarnRatio(pod.CPULimitRatio, input.Config.Rules.ResourceWarnRatio) || exceedsWarnRatio(pod.MemoryLimitRatio, input.Config.Rules.ResourceWarnRatio) {
+			resourceWarnPods = append(resourceWarnPods, pod.Name)
 		}
 	}
 
@@ -181,6 +189,54 @@ func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 			Message:        "one or more pods have restart_count > 0",
 			Recommendation: "inspect prior crashes and restart causes before declaring the cluster healthy",
 			Actual:         restartedPods,
+		})
+	}
+
+	if !input.Inventory.K8s.ResourceUsageAvailable {
+		message := "pod resource usage unavailable"
+		if reason := string(input.Inventory.K8s.ResourceUnavailableReason); reason != "" {
+			message += ": " + reason
+			result.Warnings = append(result.Warnings, fmt.Sprintf("resource usage unavailable for %d pods: %s", len(input.Inventory.K8s.Pods), reason))
+		}
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "k8s",
+			Name:           "k8s-resource-usage",
+			Status:         model.CheckStatusWarn,
+			Target:         input.Inventory.K8s.Namespace,
+			Message:        message,
+			Recommendation: "install metrics-server or grant metrics.k8s.io read permissions",
+		})
+		return
+	}
+
+	if input.Inventory.K8s.ResourceUsagePartial {
+		missingCount := len(input.Inventory.K8s.Pods) - input.Inventory.K8s.MetricsAvailablePodCount
+		reason := string(input.Inventory.K8s.ResourceUnavailableReason)
+		if reason == "" {
+			reason = string(model.MetricsUnavailableReasonUnknown)
+		}
+		result.Warnings = append(result.Warnings, fmt.Sprintf("resource usage unavailable for %d pods: %s", missingCount, reason))
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "k8s",
+			Name:           "k8s-resource-usage",
+			Status:         model.CheckStatusWarn,
+			Target:         input.Inventory.K8s.Namespace,
+			Message:        fmt.Sprintf("resource usage partial (%d/%d pods have metrics)", input.Inventory.K8s.MetricsAvailablePodCount, len(input.Inventory.K8s.Pods)),
+			Recommendation: "verify metrics-server coverage for the pods with unknown usage",
+		})
+	}
+
+	if len(resourceWarnPods) > 0 {
+		result.Warnings = append(result.Warnings, "pods above usage/limit threshold: "+strings.Join(resourceWarnPods, ", "))
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "k8s",
+			Name:           "k8s-resource-ratio",
+			Status:         model.CheckStatusWarn,
+			Target:         input.Inventory.K8s.Namespace,
+			Message:        "one or more pods exceed the configured usage/limit warning threshold",
+			Recommendation: "inspect CPU and memory pressure before declaring the cluster healthy",
+			Actual:         resourceWarnPods,
+			Expected:       input.Config.Rules.ResourceWarnRatio,
 		})
 	}
 }
@@ -230,4 +286,8 @@ func normalizeElapsedMS(startedAt, endedAt time.Time) int64 {
 		return elapsedMS
 	}
 	return (elapsedMS / 100) * 100
+}
+
+func exceedsWarnRatio(value *float64, threshold float64) bool {
+	return value != nil && *value > threshold
 }

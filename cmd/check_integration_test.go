@@ -39,9 +39,26 @@ func fakeRealDependencies() dependencies {
 			K8sCollector: collectork8s.DefaultCollector{
 				Factory: platformk8s.FakeClientFactory{
 					Client: &platformk8s.FakeClient{
-						Pods:      []platformk8s.Pod{{Name: "proxy-0", Phase: "Running", Ready: true, RestartCount: 0}},
+						Pods: []platformk8s.Pod{{
+							Name:          "proxy-0",
+							Phase:         "Running",
+							Ready:         true,
+							RestartCount:  0,
+							CPURequest:    "500m",
+							CPULimit:      "1000m",
+							MemoryRequest: "512Mi",
+							MemoryLimit:   "1Gi",
+						}},
 						Services:  []platformk8s.Service{{Name: "milvus", Type: "ClusterIP", Ports: []string{"19530/tcp"}}},
 						Endpoints: []platformk8s.Endpoint{{Name: "milvus-abc", Addresses: []string{"10.0.0.1"}}},
+						Metrics: platformk8s.PlatformMetricsResult{
+							Available: true,
+							Metrics: []platformk8s.PodMetric{{
+								PodName:     "proxy-0",
+								CPUUsage:    "125m",
+								MemoryUsage: "256Mi",
+							}},
+						},
 					},
 				},
 			},
@@ -64,7 +81,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 pods=1", "K8s Summary: services=1 endpoints=1", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}

@@ -12,6 +12,8 @@ type FakeClient struct {
 	ServicesErr  error
 	Endpoints    []Endpoint
 	EndpointsErr error
+	Metrics      PlatformMetricsResult
+	MetricsErr   error
 }
 
 func (f *FakeClient) ListPods(ctx context.Context, namespace string) ([]Pod, error) {
@@ -30,6 +32,19 @@ func (f *FakeClient) ListEndpoints(ctx context.Context, namespace string) ([]End
 	_ = ctx
 	_ = namespace
 	return append([]Endpoint(nil), f.Endpoints...), f.EndpointsErr
+}
+
+func (f *FakeClient) ListPodMetrics(ctx context.Context, namespace string) (PlatformMetricsResult, error) {
+	_ = ctx
+	_ = namespace
+	result := PlatformMetricsResult{
+		Available:         f.Metrics.Available,
+		UnavailableReason: f.Metrics.UnavailableReason,
+	}
+	if len(f.Metrics.Metrics) > 0 {
+		result.Metrics = append([]PodMetric(nil), f.Metrics.Metrics...)
+	}
+	return result, f.MetricsErr
 }
 
 type FakeClientFactory struct {

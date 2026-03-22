@@ -27,12 +27,15 @@ func sampleResult() *model.AnalysisResult {
 		Confidence: model.ConfidenceMedium,
 		ExitCode:   1,
 		Summary: model.AnalysisSummary{
-			DatabaseCount:   1,
-			CollectionCount: 1,
-			TotalRowCount:   int64Ptr(123),
-			PodCount:        2,
-			ServiceCount:    1,
-			EndpointCount:   1,
+			DatabaseCount:            1,
+			CollectionCount:          1,
+			TotalRowCount:            int64Ptr(123),
+			PodCount:                 2,
+			ReadyPodCount:            1,
+			NotReadyPodCount:         1,
+			MetricsAvailablePodCount: 1,
+			ServiceCount:             1,
+			EndpointCount:            1,
 		},
 		Probes: model.ProbeOutputView{
 			BusinessRead: model.BusinessReadProbeResult{Status: model.CheckStatusPass, Message: "ok"},
@@ -53,8 +56,35 @@ func sampleResult() *model.AnalysisResult {
 				},
 			},
 			K8s: model.K8sInventory{
-				Namespace: "milvus",
-				Pods:      []model.PodStatusSummary{{Name: "milvus-0", Phase: "Running", Ready: true}},
+				Namespace:                "milvus",
+				TotalPodCount:            2,
+				ReadyPodCount:            1,
+				NotReadyPodCount:         1,
+				ResourceUsageAvailable:   true,
+				ResourceUsagePartial:     true,
+				MetricsAvailablePodCount: 1,
+				Pods: []model.PodStatusSummary{
+					{
+						Name:               "milvus-0",
+						Phase:              "Running",
+						Ready:              true,
+						CPUUsage:           "125m",
+						MemoryUsage:        "256Mi",
+						CPURequest:         "500m",
+						CPULimit:           "1",
+						MemoryRequest:      "512Mi",
+						MemoryLimit:        "1Gi",
+						CPURequestRatio:    float64Ptr(0.25),
+						CPULimitRatio:      float64Ptr(0.125),
+						MemoryRequestRatio: float64Ptr(0.5),
+						MemoryLimitRatio:   float64Ptr(0.25),
+					},
+					{
+						Name:  "milvus-1",
+						Phase: "Pending",
+						Ready: false,
+					},
+				},
 				Services:  []model.ServiceInventory{{Name: "attu", Type: "NodePort", Ports: []string{"3000:30031/tcp"}}},
 				Endpoints: []model.EndpointInventory{{Name: "milvus", Addresses: []string{"10.0.0.1"}}},
 			},
@@ -125,7 +155,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "K8s Summary: services=1 endpoints=1", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -163,8 +193,11 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "Collection Detail:\n- default.book: row_count=123") {
 		t.Fatalf("detail=true should include collection row count detail: %s", out)
 	}
-	if !strings.Contains(string(out), "Pod Detail:\n- milvus-0: phase=Running ready=true restart_count=0") {
+	if !strings.Contains(string(out), "Pod Detail:\n- milvus-0: phase=Running ready=true restart_count=0 cpu_usage=125m memory_usage=256Mi cpu_request=500m cpu_limit=1 memory_request=512Mi memory_limit=1Gi cpu_request_ratio=0.2500 cpu_limit_ratio=0.1250 memory_request_ratio=0.5000 memory_limit_ratio=0.2500") {
 		t.Fatalf("detail=true should include pod detail: %s", out)
+	}
+	if !strings.Contains(string(out), "- milvus-1: phase=Pending ready=false restart_count=0 cpu_usage=unknown memory_usage=unknown") {
+		t.Fatalf("detail=true should include unknown metric detail: %s", out)
 	}
 	if !strings.Contains(string(out), "Service Detail:\n- attu: type=NodePort ports=3000:30031/tcp") {
 		t.Fatalf("detail=true should include service detail: %s", out)
@@ -219,7 +252,34 @@ func TestJSONRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_UsesNullForMissingRatios(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var decoded struct {
+		Inventory struct {
+			K8s struct {
+				Pods []map[string]any `json:"pods"`
+			} `json:"k8s"`
+		} `json:"inventory"`
+	}
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.Inventory.K8s.Pods[1]["cpu_limit_ratio"] != nil {
+		t.Fatalf("cpu_limit_ratio should be null, got %#v", decoded.Inventory.K8s.Pods[1]["cpu_limit_ratio"])
+	}
+}
+
 func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func float64Ptr(v float64) *float64 {
 	return &v
 }
 

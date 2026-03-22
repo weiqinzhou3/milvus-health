@@ -329,6 +329,51 @@ func TestCheckRunner_TransformsK8sFailureIntoAnalyzeInput(t *testing.T) {
 	}
 }
 
+func TestCheckRunner_PassesK8sMetricsStatusIntoAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{},
+		K8sCollector: fakeK8sCollector{
+			inventory: model.K8sInventory{
+				Namespace:                 "milvus",
+				TotalPodCount:             2,
+				ReadyPodCount:             1,
+				NotReadyPodCount:          1,
+				ResourceUsageAvailable:    false,
+				ResourceUnavailableReason: model.MetricsUnavailableReasonPermissionDenied,
+				MetricsAvailablePodCount:  0,
+				Pods: []model.PodStatusSummary{
+					{Name: "proxy-0", Phase: "Running", Ready: true},
+					{Name: "querynode-0", Phase: "Pending", Ready: false},
+				},
+			},
+		},
+		Analyzer: analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := analyzer.input.Inventory.K8s
+	if got.ResourceUsageAvailable {
+		t.Fatalf("ResourceUsageAvailable = true, want false")
+	}
+	if got.ResourceUnavailableReason != model.MetricsUnavailableReasonPermissionDenied {
+		t.Fatalf("ResourceUnavailableReason = %q", got.ResourceUnavailableReason)
+	}
+	if got.TotalPodCount != 2 || got.ReadyPodCount != 1 || got.NotReadyPodCount != 1 {
+		t.Fatalf("K8s summary = %#v", got)
+	}
+}
+
 func TestValidateRunner_ReturnsAppError_ForInvalidConfig(t *testing.T) {
 	t.Parallel()
 
