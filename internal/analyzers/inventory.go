@@ -2,6 +2,7 @@ package analyzers
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/weiqinzhou3/milvus-health/internal/model"
@@ -40,6 +41,7 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 		Summary: model.AnalysisSummary{
 			DatabaseCount:   input.Inventory.Milvus.DatabaseCount,
 			CollectionCount: input.Inventory.Milvus.CollectionCount,
+			TotalRowCount:   input.Inventory.Milvus.TotalRowCount,
 			PodCount:        len(input.Inventory.K8s.Pods),
 		},
 		Probes: model.ProbeOutputView{
@@ -57,6 +59,18 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 		Failures:  append([]string(nil), input.Failures...),
 		Checks:    append([]model.CheckResult(nil), input.Checks...),
 		ElapsedMS: normalizeElapsedMS(input.StartedAt, input.EndedAt),
+	}
+
+	if missingCollections := collectionsMissingRowCount(input.Inventory.Milvus); len(missingCollections) > 0 {
+		result.Warnings = append(result.Warnings, buildRowCountWarning(missingCollections))
+		result.Checks = append(result.Checks, model.CheckResult{
+			Category:       "milvus",
+			Name:           "milvus-row-count",
+			Status:         model.CheckStatusWarn,
+			Message:        buildRowCountWarning(missingCollections),
+			Recommendation: "verify GetCollectionStatistics availability for the affected collections",
+			Actual:         missingCollections,
+		})
 	}
 
 	if hasMilvusFacts(input.Inventory.Milvus) || len(input.Inventory.K8s.Pods) > 0 {
@@ -98,8 +112,28 @@ func hasMilvusFacts(inventory model.MilvusInventory) bool {
 	return inventory.ServerVersion != "" ||
 		inventory.DatabaseCount > 0 ||
 		inventory.CollectionCount > 0 ||
+		inventory.TotalRowCount != nil ||
+		len(inventory.Collections) > 0 ||
 		len(inventory.Databases) > 0 ||
 		len(inventory.DatabaseNames) > 0
+}
+
+func collectionsMissingRowCount(inventory model.MilvusInventory) []string {
+	if len(inventory.Collections) == 0 {
+		return nil
+	}
+
+	missing := make([]string, 0)
+	for _, collection := range inventory.Collections {
+		if collection.RowCount == nil {
+			missing = append(missing, collection.Database+"."+collection.Name)
+		}
+	}
+	return missing
+}
+
+func buildRowCountWarning(collections []string) string {
+	return "row count unavailable for: " + strings.Join(collections, ", ")
 }
 
 func normalizeElapsedMS(startedAt, endedAt time.Time) int64 {

@@ -26,6 +26,7 @@ func sampleResult() *model.AnalysisResult {
 		Summary: model.AnalysisSummary{
 			DatabaseCount:   1,
 			CollectionCount: 1,
+			TotalRowCount:   int64Ptr(123),
 			PodCount:        2,
 		},
 		Probes: model.ProbeOutputView{
@@ -38,8 +39,12 @@ func sampleResult() *model.AnalysisResult {
 				ServerVersion:   "2.6.1",
 				DatabaseCount:   1,
 				CollectionCount: 1,
+				TotalRowCount:   int64Ptr(123),
 				Databases: []model.DatabaseInventory{
 					{Name: "default", Collections: []string{"book"}},
+				},
+				Collections: []model.CollectionInventory{
+					{Database: "default", Name: "book", RowCount: int64Ptr(123)},
 				},
 			},
 			K8s: model.K8sInventory{
@@ -115,7 +120,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -150,6 +155,9 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "Inventory:") {
 		t.Fatalf("detail=true should include inventory summary: %s", out)
 	}
+	if !strings.Contains(string(out), "Collection Detail:\n- default.book: row_count=123") {
+		t.Fatalf("detail=true should include collection row count detail: %s", out)
+	}
 }
 
 func TestJSONRenderer_DetailFalse_StableShape(t *testing.T) {
@@ -171,8 +179,13 @@ func TestJSONRenderer_DetailFalse_StableShape(t *testing.T) {
 	if _, ok := decoded["inventory"]; !ok {
 		t.Fatalf("detail=false should keep inventory, got %s", out)
 	}
-	if _, ok := decoded["checks"]; ok {
-		t.Fatalf("detail=false should omit checks, got %s", out)
+	checks, ok := decoded["checks"]
+	if !ok {
+		t.Fatalf("detail=false should keep checks as empty array, got %s", out)
+	}
+	items, _ := checks.([]any)
+	if len(items) != 0 {
+		t.Fatalf("detail=false should keep empty checks, got %s", out)
 	}
 }
 
@@ -190,6 +203,10 @@ func TestJSONRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if _, ok := decoded["checks"]; !ok {
 		t.Fatalf("detail=true should include checks, got %s", out)
 	}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }
 
 func TestRendererFactory_InvalidFormat_ReturnsError(t *testing.T) {

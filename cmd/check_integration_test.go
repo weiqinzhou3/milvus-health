@@ -28,6 +28,9 @@ func fakeRealDependencies() dependencies {
 						Collections: map[string][]string{
 							"default": {"book"},
 						},
+						RowCounts: map[string]map[string]int64{
+							"default": {"book": 123},
+						},
 					},
 				},
 			},
@@ -50,7 +53,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 pods=0", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 pods=0", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}

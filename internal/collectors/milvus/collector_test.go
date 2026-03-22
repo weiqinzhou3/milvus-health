@@ -55,6 +55,10 @@ func TestCollector_CollectInventory(t *testing.T) {
 					"analytics": {"events"},
 					"default":   {"book", "movie"},
 				},
+				RowCounts: map[string]map[string]int64{
+					"analytics": {"events": 7},
+					"default":   {"book": 10, "movie": 11},
+				},
 			},
 		},
 	}
@@ -68,6 +72,15 @@ func TestCollector_CollectInventory(t *testing.T) {
 	}
 	if len(inventory.Databases) != 2 || inventory.Databases[1].Collections[1] != "movie" {
 		t.Fatalf("Databases = %#v", inventory.Databases)
+	}
+	if inventory.TotalRowCount == nil || *inventory.TotalRowCount != 28 {
+		t.Fatalf("TotalRowCount = %#v, want 28", inventory.TotalRowCount)
+	}
+	if len(inventory.Collections) != 3 {
+		t.Fatalf("Collections = %#v", inventory.Collections)
+	}
+	if inventory.Collections[0].RowCount == nil || *inventory.Collections[0].RowCount != 7 {
+		t.Fatalf("first collection row count = %#v", inventory.Collections[0].RowCount)
 	}
 }
 
@@ -85,5 +98,43 @@ func TestCollector_CollectClusterInfoReturnsAppErrorOnConnectFailure(t *testing.
 	}
 	if appErr.Code != model.ErrCodeMilvusConnect {
 		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, model.ErrCodeMilvusConnect)
+	}
+}
+
+func TestCollector_CollectInventory_DegradesWhenCollectionRowCountUnavailable(t *testing.T) {
+	t.Parallel()
+
+	collector := collectormilvus.DefaultCollector{
+		Factory: platformmilvus.FakeClientFactory{
+			Client: &platformmilvus.FakeClient{
+				Databases: []string{"default"},
+				Collections: map[string][]string{
+					"default": {"book", "movie"},
+				},
+				RowCounts: map[string]map[string]int64{
+					"default": {"book": 10},
+				},
+				RowCountErrs: map[string]map[string]error{
+					"default": {"movie": errors.New("stats unavailable")},
+				},
+			},
+		},
+	}
+
+	inventory, err := collector.CollectInventory(context.Background(), testConfig())
+	if err != nil {
+		t.Fatalf("CollectInventory() error = %v", err)
+	}
+	if !inventory.CapabilityDegraded {
+		t.Fatal("CapabilityDegraded = false, want true")
+	}
+	if inventory.TotalRowCount != nil {
+		t.Fatalf("TotalRowCount = %#v, want nil", inventory.TotalRowCount)
+	}
+	if len(inventory.DegradedCapabilities) != 1 || inventory.DegradedCapabilities[0] != "row_count:default.movie" {
+		t.Fatalf("DegradedCapabilities = %#v", inventory.DegradedCapabilities)
+	}
+	if inventory.Collections[1].RowCount != nil {
+		t.Fatalf("missing row count should render as nil, got %#v", inventory.Collections[1].RowCount)
 	}
 }

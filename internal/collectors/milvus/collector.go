@@ -58,7 +58,11 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 		Reachable:     true,
 		DatabaseNames: append([]string(nil), databases...),
 		Databases:     make([]model.DatabaseInventory, 0, len(databases)),
+		Collections:   make([]model.CollectionInventory, 0),
 	}
+
+	var totalRowCount int64
+	rowCountComplete := true
 
 	for _, database := range databases {
 		collections, err := client.ListCollections(ctx, database)
@@ -73,10 +77,31 @@ func (c DefaultCollector) CollectInventory(ctx context.Context, cfg *model.Confi
 			Name:        database,
 			Collections: append([]string(nil), collections...),
 		})
-		inventory.CollectionCount += len(collections)
+		for _, collection := range collections {
+			collectionInventory := model.CollectionInventory{
+				Database: database,
+				Name:     collection,
+			}
+
+			rowCount, err := client.GetCollectionRowCount(ctx, database, collection)
+			if err != nil {
+				rowCountComplete = false
+				inventory.CapabilityDegraded = true
+				inventory.DegradedCapabilities = appendUnique(inventory.DegradedCapabilities, fmt.Sprintf("row_count:%s.%s", database, collection))
+			} else {
+				collectionInventory.RowCount = int64Ptr(rowCount)
+				totalRowCount += rowCount
+			}
+
+			inventory.Collections = append(inventory.Collections, collectionInventory)
+			inventory.CollectionCount++
+		}
 	}
 
 	inventory.DatabaseCount = len(inventory.Databases)
+	if rowCountComplete {
+		inventory.TotalRowCount = int64Ptr(totalRowCount)
+	}
 	return inventory, nil
 }
 
@@ -106,4 +131,17 @@ func clusterInfoFromConfig(cfg *model.Config) model.ClusterInfo {
 		ArchProfile: model.ArchProfileUnknown,
 		MQType:      "unknown",
 	}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func appendUnique(items []string, value string) []string {
+	for _, item := range items {
+		if item == value {
+			return items
+		}
+	}
+	return append(items, value)
 }

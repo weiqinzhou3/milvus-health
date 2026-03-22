@@ -3,6 +3,7 @@ package render
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/weiqinzhou3/milvus-health/internal/model"
@@ -37,7 +38,12 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	fmt.Fprintf(&b, "Standby: %t\n", result.Standby)
 	fmt.Fprintf(&b, "Confidence: %s\n", result.Confidence)
 	fmt.Fprintf(&b, "Exit Code: %d\n", result.ExitCode)
-	fmt.Fprintf(&b, "Summary: databases=%d collections=%d pods=%d\n", result.Summary.DatabaseCount, result.Summary.CollectionCount, result.Summary.PodCount)
+	fmt.Fprintf(&b, "Summary: databases=%d collections=%d total_rows=%s pods=%d\n",
+		result.Summary.DatabaseCount,
+		result.Summary.CollectionCount,
+		displayInt64(result.Summary.TotalRowCount),
+		result.Summary.PodCount,
+	)
 	if result.Inventory != nil {
 		fmt.Fprintf(&b, "Databases: %s\n", formatDatabases(result.Inventory.Milvus.Databases))
 	}
@@ -49,7 +55,18 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	}
 	if opts.Detail && result.Inventory != nil {
 		if result.Inventory.Milvus.ServerVersion != "" || result.Inventory.Milvus.DatabaseCount > 0 || result.Inventory.Milvus.CollectionCount > 0 {
-			fmt.Fprintf(&b, "Inventory: milvus_version=%s databases=%d collections=%d\n", displayString(result.Inventory.Milvus.ServerVersion, "unknown"), result.Inventory.Milvus.DatabaseCount, result.Inventory.Milvus.CollectionCount)
+			fmt.Fprintf(&b, "Inventory: milvus_version=%s databases=%d collections=%d total_rows=%s\n",
+				displayString(result.Inventory.Milvus.ServerVersion, "unknown"),
+				result.Inventory.Milvus.DatabaseCount,
+				result.Inventory.Milvus.CollectionCount,
+				displayInt64(result.Inventory.Milvus.TotalRowCount),
+			)
+		}
+		if len(result.Inventory.Milvus.Collections) > 0 {
+			b.WriteString("Collection Detail:\n")
+			for _, collection := range result.Inventory.Milvus.Collections {
+				fmt.Fprintf(&b, "- %s.%s: row_count=%s\n", collection.Database, collection.Name, displayInt64(collection.RowCount))
+			}
 		}
 		if result.Inventory.K8s.Namespace != "" || len(result.Inventory.K8s.Pods) > 0 {
 			fmt.Fprintf(&b, "Inventory: namespace=%s pods=%d services=%d endpoints=%d\n", result.Inventory.K8s.Namespace, len(result.Inventory.K8s.Pods), len(result.Inventory.K8s.Services), len(result.Inventory.K8s.Endpoints))
@@ -73,9 +90,39 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	if result == nil {
 		return nil, fmt.Errorf("analysis result is nil")
 	}
-	payload := *result
-	if !opts.Detail {
-		payload.Checks = nil
+
+	type output struct {
+		Cluster    model.ClusterInfo       `json:"cluster"`
+		Result     model.FinalResult       `json:"result"`
+		Standby    bool                    `json:"standby"`
+		Confidence model.ConfidenceLevel   `json:"confidence"`
+		ExitCode   int                     `json:"exit_code"`
+		ElapsedMS  int64                   `json:"elapsed_ms"`
+		Summary    model.AnalysisSummary   `json:"summary"`
+		Probes     model.ProbeOutputView   `json:"probes"`
+		Inventory  *model.ClusterInventory `json:"inventory,omitempty"`
+		Warnings   []string                `json:"warnings,omitempty"`
+		Failures   []string                `json:"failures,omitempty"`
+		Checks     []model.CheckResult     `json:"checks"`
+	}
+
+	payload := output{
+		Cluster:    result.Cluster,
+		Result:     result.Result,
+		Standby:    result.Standby,
+		Confidence: result.Confidence,
+		ExitCode:   result.ExitCode,
+		ElapsedMS:  result.ElapsedMS,
+		Summary:    result.Summary,
+		Probes:     result.Probes,
+		Inventory:  result.Inventory,
+		Warnings:   result.Warnings,
+		Failures:   result.Failures,
+	}
+	if opts.Detail {
+		payload.Checks = append([]model.CheckResult(nil), result.Checks...)
+	} else {
+		payload.Checks = []model.CheckResult{}
 	}
 	return json.MarshalIndent(payload, "", "  ")
 }
@@ -98,6 +145,13 @@ func displayString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func displayInt64(value *int64) string {
+	if value == nil {
+		return "unknown"
+	}
+	return strconv.FormatInt(*value, 10)
 }
 
 func formatDatabases(databases []model.DatabaseInventory) string {

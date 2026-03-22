@@ -243,9 +243,10 @@ type CheckResult struct {
 }
 
 type AnalysisSummary struct {
-	DatabaseCount   int `json:"database_count"`
-	CollectionCount int `json:"collection_count"`
-	PodCount        int `json:"pod_count"`
+	DatabaseCount   int    `json:"database_count"`
+	CollectionCount int    `json:"collection_count"`
+	TotalRowCount   *int64 `json:"total_row_count"`
+	PodCount        int    `json:"pod_count"`
 }
 
 type ClusterInventory struct {
@@ -258,6 +259,7 @@ type MilvusInventory struct {
 	ServerVersion        string                `json:"server_version,omitempty"`
 	DatabaseCount        int                   `json:"database_count"`
 	CollectionCount      int                   `json:"collection_count"`
+	TotalRowCount        *int64                `json:"total_row_count"`
 	DatabaseNames        []string              `json:"database_names,omitempty"`
 	Databases            []DatabaseInventory   `json:"databases,omitempty"`
 	Collections          []CollectionInventory `json:"collections,omitempty"`
@@ -273,6 +275,7 @@ type DatabaseInventory struct {
 type CollectionInventory struct {
 	Database   string `json:"database"`
 	Name       string `json:"name"`
+	RowCount   *int64 `json:"row_count"`
 	ShardNum   int32  `json:"shard_num,omitempty"`
 	FieldCount int    `json:"field_count,omitempty"`
 }

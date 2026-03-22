@@ -12,6 +12,8 @@ type FakeClient struct {
 	DatabasesErr   error
 	Collections    map[string][]string
 	CollectionErrs map[string]error
+	RowCounts      map[string]map[string]int64
+	RowCountErrs   map[string]map[string]error
 	Closed         bool
 }
 
@@ -31,6 +33,14 @@ func (f *FakeClient) ListCollections(ctx context.Context, database string) ([]st
 		return nil, err
 	}
 	return append([]string(nil), f.Collections[database]...), nil
+}
+
+func (f *FakeClient) GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error) {
+	_ = ctx
+	if err := f.RowCountErrs[database][collection]; err != nil {
+		return 0, err
+	}
+	return f.RowCounts[database][collection], nil
 }
 
 func (f *FakeClient) Close(ctx context.Context) error {
