@@ -315,6 +315,72 @@ func float64Ptr(v float64) *float64 {
 	return &v
 }
 
+func TestJSONRenderer_DisabledResourceUsage_ShowsCorrectSourceAndNoUsage(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Summary.ResourceUsageSource = model.K8sResourceUsageSourceDisabled
+	result.Summary.MetricsAvailablePodCount = 0
+	result.Inventory.K8s.ResourceUsageSource = model.K8sResourceUsageSourceDisabled
+	result.Inventory.K8s.ResourceUsageAvailable = false
+	result.Inventory.K8s.ResourceUsagePartial = false
+	result.Inventory.K8s.ResourceUnavailableReason = model.MetricsUnavailableReasonDisabled
+	result.Inventory.K8s.MetricsAvailablePodCount = 0
+	// Clear usage/ratio fields to reflect disabled state.
+	for i := range result.Inventory.K8s.Pods {
+		result.Inventory.K8s.Pods[i].CPUUsage = ""
+		result.Inventory.K8s.Pods[i].MemoryUsage = ""
+		result.Inventory.K8s.Pods[i].CPULimitRatio = nil
+		result.Inventory.K8s.Pods[i].MemoryLimitRatio = nil
+		result.Inventory.K8s.Pods[i].CPURequestRatio = nil
+		result.Inventory.K8s.Pods[i].MemoryRequestRatio = nil
+	}
+
+	out, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var decoded struct {
+		Summary struct {
+			ResourceUsageSource string `json:"resource_usage_source"`
+		} `json:"summary"`
+		Inventory struct {
+			K8s struct {
+				ResourceUsageSource    string `json:"resource_usage_source"`
+				ResourceUsageAvailable bool   `json:"resource_usage_available"`
+				Pods                   []map[string]any `json:"pods"`
+			} `json:"k8s"`
+		} `json:"inventory"`
+	}
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v; raw: %s", err, out)
+	}
+	if decoded.Summary.ResourceUsageSource != "disabled" {
+		t.Fatalf("summary.resource_usage_source = %q, want \"disabled\"", decoded.Summary.ResourceUsageSource)
+	}
+	if decoded.Inventory.K8s.ResourceUsageSource != "disabled" {
+		t.Fatalf("inventory.k8s.resource_usage_source = %q, want \"disabled\"", decoded.Inventory.K8s.ResourceUsageSource)
+	}
+	if decoded.Inventory.K8s.ResourceUsageAvailable {
+		t.Fatalf("inventory.k8s.resource_usage_available should be false when disabled")
+	}
+	// Pod ratios must be null (spec §5.5.3: no omitempty on ratio fields).
+	for _, pod := range decoded.Inventory.K8s.Pods {
+		for _, ratioField := range []string{"cpu_limit_ratio", "memory_limit_ratio", "cpu_request_ratio", "memory_request_ratio"} {
+			if v, ok := pod[ratioField]; ok && v != nil {
+				t.Fatalf("pod[%q] = %v, want null when source is disabled", ratioField, v)
+			}
+		}
+	}
+	// cpu_usage / memory_usage must not appear or be empty (they carry omitempty).
+	for _, pod := range decoded.Inventory.K8s.Pods {
+		if v, ok := pod["cpu_usage"]; ok && v != "" {
+			t.Fatalf("pod.cpu_usage = %v, want absent/empty when source is disabled", v)
+		}
+	}
+}
+
 func TestRendererFactory_InvalidFormat_ReturnsError(t *testing.T) {
 	t.Parallel()
 

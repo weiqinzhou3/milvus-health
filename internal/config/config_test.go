@@ -445,6 +445,36 @@ func TestCLIOverrideApplier_CleanupOverride(t *testing.T) {
 	}
 }
 
+func TestYAMLLoader_Load_ParsesK8sResourceUsageSourceNested(t *testing.T) {
+	t.Parallel()
+
+	// Verify that the nested YAML key k8s.resource_usage.source is parsed
+	// correctly for all three accepted values (auto, metrics-api, disabled).
+	cases := []struct {
+		source string
+		want   model.K8sResourceUsageSource
+	}{
+		{"auto", model.K8sResourceUsageSourceAuto},
+		{"metrics-api", model.K8sResourceUsageSourceMetricsAPI},
+		{"disabled", model.K8sResourceUsageSourceDisabled},
+	}
+	for _, tc := range cases {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.yaml")
+		content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\nk8s:\n  namespace: milvus\n  resource_usage:\n    source: " + tc.source + "\noutput:\n  format: text\n"
+		if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		cfg, err := (config.YAMLLoader{}).Load(configPath)
+		if err != nil {
+			t.Fatalf("Load(%q) error = %v", tc.source, err)
+		}
+		if cfg.K8s.ResourceUsage.Source != tc.want {
+			t.Fatalf("K8s.ResourceUsage.Source = %q, want %q", cfg.K8s.ResourceUsage.Source, tc.want)
+		}
+	}
+}
+
 func assertHasFieldError(t *testing.T, err error, field string) {
 	t.Helper()
 

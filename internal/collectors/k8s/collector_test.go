@@ -214,6 +214,54 @@ func TestCollector_MetricsAPISource_RecordsMetricsUnavailableReasonWithoutFailin
 	}
 }
 
+func TestCollector_AutoSource_DegradesSameAsMetricsAPIWhenUnavailable(t *testing.T) {
+	t.Parallel()
+
+	// auto with metrics unavailable must degrade gracefully (WARN path), not fail.
+	// The returned inventory should record unavailable=false and a non-empty reason.
+	client := &platformk8s.FakeClient{
+		Pods: []platformk8s.Pod{{
+			Name:          "milvus-0",
+			Phase:         "Running",
+			Ready:         true,
+			CPURequest:    "500m",
+			CPULimit:      "1000m",
+			MemoryRequest: "512Mi",
+			MemoryLimit:   "1Gi",
+		}},
+		Metrics: platformk8s.PlatformMetricsResult{
+			Available:         false,
+			UnavailableReason: "insufficient permissions",
+		},
+	}
+	collector := k8s.DefaultCollector{
+		Factory: platformk8s.FakeClientFactory{
+			Client: client,
+		},
+	}
+
+	inventory, err := collector.Collect(context.Background(), testConfig(model.K8sResourceUsageSourceAuto))
+	if err != nil {
+		t.Fatalf("Collect() error = %v, want nil (auto must not fail when metrics unavailable)", err)
+	}
+	if client.MetricsCalls != 1 {
+		t.Fatalf("MetricsCalls = %d, want 1 (auto must try metrics)", client.MetricsCalls)
+	}
+	if inventory.ResourceUsageAvailable {
+		t.Fatalf("ResourceUsageAvailable = true, want false")
+	}
+	if inventory.ResourceUnavailableReason != model.MetricsUnavailableReasonPermissionDenied {
+		t.Fatalf("ResourceUnavailableReason = %q, want %q", inventory.ResourceUnavailableReason, model.MetricsUnavailableReasonPermissionDenied)
+	}
+	if inventory.Pods[0].CPULimitRatio != nil || inventory.Pods[0].MemoryLimitRatio != nil {
+		t.Fatalf("Ratios should be nil when metrics unavailable: %#v", inventory.Pods[0])
+	}
+	// Static request/limit must survive even when usage is unavailable.
+	if inventory.Pods[0].CPURequest != "500m" || inventory.Pods[0].CPULimit != "1000m" {
+		t.Fatalf("static resources should survive: %#v", inventory.Pods[0])
+	}
+}
+
 func TestCollector_ReturnsAppError_WhenClientFails(t *testing.T) {
 	t.Parallel()
 
