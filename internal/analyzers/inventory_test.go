@@ -67,16 +67,17 @@ func TestAnalyzer_ReturnsPassForSuccessfulMilvusInventory(t *testing.T) {
 		Config: analysisConfig(),
 		Inventory: model.ClusterInventory{
 			Milvus: model.MilvusInventory{
-				ServerVersion:   "2.6.1",
-				DatabaseCount:   1,
-				CollectionCount: 2,
-				TotalRowCount:   int64Ptr(30),
+				ServerVersion:        "2.6.1",
+				DatabaseCount:        1,
+				CollectionCount:      2,
+				TotalRowCount:        int64Ptr(30),
+				TotalBinlogSizeBytes: int64Ptr(3000),
 				Databases: []model.DatabaseInventory{
 					{Name: "default", Collections: []string{"book", "movie"}},
 				},
 				Collections: []model.CollectionInventory{
-					{Database: "default", Name: "book", RowCount: int64Ptr(10)},
-					{Database: "default", Name: "movie", RowCount: int64Ptr(20)},
+					{Database: "default", Name: "book", RowCount: int64Ptr(10), BinlogSizeBytes: int64Ptr(1000)},
+					{Database: "default", Name: "movie", RowCount: int64Ptr(20), BinlogSizeBytes: int64Ptr(2000)},
 				},
 			},
 		},
@@ -112,6 +113,9 @@ func TestAnalyzer_ReturnsPassForSuccessfulMilvusInventory(t *testing.T) {
 	}
 	if result.Summary.TotalRowCount == nil || *result.Summary.TotalRowCount != 30 {
 		t.Fatalf("Summary.TotalRowCount = %#v, want 30", result.Summary.TotalRowCount)
+	}
+	if result.Summary.TotalBinlogSizeBytes == nil || *result.Summary.TotalBinlogSizeBytes != 3000 {
+		t.Fatalf("Summary.TotalBinlogSizeBytes = %#v, want 3000", result.Summary.TotalBinlogSizeBytes)
 	}
 	if result.ElapsedMS != 500 {
 		t.Fatalf("ElapsedMS = %d, want 500", result.ElapsedMS)
@@ -417,6 +421,66 @@ func TestAnalyzer_WarnsWhenCollectionRowCountIsPartial(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_WarnsWhenCollectionBinlogSizeIsPartial(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Inventory: model.ClusterInventory{
+			Milvus: model.MilvusInventory{
+				DatabaseCount:        1,
+				CollectionCount:      2,
+				TotalBinlogSizeBytes: int64Ptr(1000),
+				Databases: []model.DatabaseInventory{
+					{Name: "default", Collections: []string{"book", "movie"}},
+				},
+				Collections: []model.CollectionInventory{
+					{Database: "default", Name: "book", RowCount: int64Ptr(10), BinlogSizeBytes: int64Ptr(1000)},
+					{Database: "default", Name: "movie", RowCount: int64Ptr(20)},
+				},
+			},
+		},
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+		},
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
+			{Name: "milvus-inventory", Status: model.CheckStatusPass, Message: "Milvus inventory collected successfully"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultWARN {
+		t.Fatalf("Result = %s, want WARN", result.Result)
+	}
+	if result.Summary.TotalBinlogSizeBytes == nil || *result.Summary.TotalBinlogSizeBytes != 1000 {
+		t.Fatalf("Summary.TotalBinlogSizeBytes = %#v, want 1000", result.Summary.TotalBinlogSizeBytes)
+	}
+	foundWarning := false
+	foundCheck := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "default.movie") {
+			foundWarning = true
+		}
+	}
+	for _, check := range result.Checks {
+		if check.Name == "milvus-binlog-size" && check.Status == model.CheckStatusWarn {
+			foundCheck = true
+		}
+	}
+	if !foundWarning || !foundCheck {
+		t.Fatalf("Warnings=%#v Checks=%#v", result.Warnings, result.Checks)
 	}
 }
 

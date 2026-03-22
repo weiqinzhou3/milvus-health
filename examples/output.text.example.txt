@@ -8,6 +8,6 @@ Overall Result: FAIL
 Standby: false
 Confidence: low
 Exit Code: 2
-Summary: databases=0 collections=0 total_rows=unknown pods=0
+Summary: databases=0 collections=0 total_rows=unknown total_binlog_size_bytes=unknown pods=0
 K8s Summary: ready=0 not_ready=0 services=0 endpoints=0 resource_usage=unknown
 Failures: create milvus client: context deadline exceeded; create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory

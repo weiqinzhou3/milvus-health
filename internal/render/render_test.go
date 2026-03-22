@@ -30,6 +30,7 @@ func sampleResult() *model.AnalysisResult {
 			DatabaseCount:            1,
 			CollectionCount:          1,
 			TotalRowCount:            int64Ptr(123),
+			TotalBinlogSizeBytes:     int64Ptr(4567),
 			PodCount:                 2,
 			ReadyPodCount:            1,
 			NotReadyPodCount:         1,
@@ -43,16 +44,17 @@ func sampleResult() *model.AnalysisResult {
 		},
 		Inventory: &model.ClusterInventory{
 			Milvus: model.MilvusInventory{
-				Reachable:       true,
-				ServerVersion:   "2.6.1",
-				DatabaseCount:   1,
-				CollectionCount: 1,
-				TotalRowCount:   int64Ptr(123),
+				Reachable:            true,
+				ServerVersion:        "2.6.1",
+				DatabaseCount:        1,
+				CollectionCount:      1,
+				TotalRowCount:        int64Ptr(123),
+				TotalBinlogSizeBytes: int64Ptr(4567),
 				Databases: []model.DatabaseInventory{
 					{Name: "default", Collections: []string{"book"}},
 				},
 				Collections: []model.CollectionInventory{
-					{Database: "default", Name: "book", RowCount: int64Ptr(123)},
+					{Database: "default", Name: "book", CollectionID: 1001, RowCount: int64Ptr(123), BinlogSizeBytes: int64Ptr(4567)},
 				},
 			},
 			K8s: model.K8sInventory{
@@ -155,7 +157,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -190,7 +192,7 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "Inventory:") {
 		t.Fatalf("detail=true should include inventory summary: %s", out)
 	}
-	if !strings.Contains(string(out), "Collection Detail:\n- default.book: row_count=123") {
+	if !strings.Contains(string(out), "Collection Detail:\n- default.book: row_count=123 binlog_size_bytes=4567") {
 		t.Fatalf("detail=true should include collection row count detail: %s", out)
 	}
 	if !strings.Contains(string(out), "Pod Detail:\n- milvus-0: phase=Running ready=true restart_count=0 cpu_usage=125m memory_usage=256Mi cpu_request=500m cpu_limit=1 memory_request=512Mi memory_limit=1Gi cpu_request_ratio=0.2500 cpu_limit_ratio=0.1250 memory_request_ratio=0.5000 memory_limit_ratio=0.2500") {
@@ -272,6 +274,34 @@ func TestJSONRenderer_UsesNullForMissingRatios(t *testing.T) {
 	}
 	if decoded.Inventory.K8s.Pods[1]["cpu_limit_ratio"] != nil {
 		t.Fatalf("cpu_limit_ratio should be null, got %#v", decoded.Inventory.K8s.Pods[1]["cpu_limit_ratio"])
+	}
+}
+
+func TestRenderers_UseUnknownAndNullForMissingBinlogSize(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Summary.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.TotalBinlogSizeBytes = nil
+	result.Inventory.Milvus.Collections[0].BinlogSizeBytes = nil
+
+	textOut, err := (render.TextRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("text Render() error = %v", err)
+	}
+	if !strings.Contains(string(textOut), "total_binlog_size_bytes=unknown") {
+		t.Fatalf("text output should render unknown binlog size: %s", textOut)
+	}
+
+	jsonOut, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("json Render() error = %v", err)
+	}
+	if !strings.Contains(string(jsonOut), `"total_binlog_size_bytes": null`) {
+		t.Fatalf("json output should render null total binlog size: %s", jsonOut)
+	}
+	if !strings.Contains(string(jsonOut), `"binlog_size_bytes": null`) {
+		t.Fatalf("json output should render null collection binlog size: %s", jsonOut)
 	}
 }
 

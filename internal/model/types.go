@@ -287,6 +287,7 @@ type AnalysisSummary struct {
 	DatabaseCount            int    `json:"database_count"`
 	CollectionCount          int    `json:"collection_count"`
 	TotalRowCount            *int64 `json:"total_row_count"`
+	TotalBinlogSizeBytes     *int64 `json:"total_binlog_size_bytes"`
 	PodCount                 int    `json:"pod_count"`
 	ReadyPodCount            int    `json:"ready_pod_count"`
 	NotReadyPodCount         int    `json:"not_ready_pod_count"`
@@ -306,6 +307,7 @@ type MilvusInventory struct {
 	DatabaseCount        int                   `json:"database_count"`
 	CollectionCount      int                   `json:"collection_count"`
 	TotalRowCount        *int64                `json:"total_row_count"`
+	TotalBinlogSizeBytes *int64                `json:"total_binlog_size_bytes"`
 	DatabaseNames        []string              `json:"database_names,omitempty"`
 	Databases            []DatabaseInventory   `json:"databases,omitempty"`
 	Collections          []CollectionInventory `json:"collections,omitempty"`
@@ -319,11 +321,13 @@ type DatabaseInventory struct {
 }
 
 type CollectionInventory struct {
-	Database   string `json:"database"`
-	Name       string `json:"name"`
-	RowCount   *int64 `json:"row_count"`
-	ShardNum   int32  `json:"shard_num,omitempty"`
-	FieldCount int    `json:"field_count,omitempty"`
+	Database        string `json:"database"`
+	Name            string `json:"name"`
+	CollectionID    int64  `json:"collection_id,omitempty"`
+	RowCount        *int64 `json:"row_count"`
+	BinlogSizeBytes *int64 `json:"binlog_size_bytes"`
+	ShardNum        int32  `json:"shard_num,omitempty"`
+	FieldCount      int    `json:"field_count,omitempty"`
 }
 
 type K8sInventory struct {

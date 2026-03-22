@@ -16,6 +16,7 @@
     "database_count": 0,
     "collection_count": 0,
     "total_row_count": null,
+    "total_binlog_size_bytes": null,
     "pod_count": 0,
     "ready_pod_count": 0,
     "not_ready_pod_count": 0,
