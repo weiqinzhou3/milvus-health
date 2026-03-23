@@ -401,12 +401,24 @@ type BusinessReadTargetResult struct {
 	RowCount   *int64      `json:"row_count,omitempty"`
 }
 
+type ProbeStepResult struct {
+	Name       string `json:"name"`
+	Success    bool   `json:"success"`
+	DurationMS int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
+}
+
 type RWProbeResult struct {
-	Status          CheckStatus `json:"status"`
-	Enabled         bool        `json:"enabled"`
-	CleanupEnabled  bool        `json:"cleanup_enabled,omitempty"`
-	CleanupExecuted bool        `json:"cleanup_executed,omitempty"`
-	Message         string      `json:"message,omitempty"`
+	Status          CheckStatus       `json:"status"`
+	Enabled         bool              `json:"enabled"`
+	TestDatabase    string            `json:"test_database,omitempty"`
+	TestCollection  string            `json:"test_collection,omitempty"`
+	InsertRows      int               `json:"insert_rows,omitempty"`
+	VectorDim       int               `json:"vector_dim,omitempty"`
+	CleanupEnabled  bool              `json:"cleanup_enabled,omitempty"`
+	CleanupExecuted bool              `json:"cleanup_executed,omitempty"`
+	StepResults     []ProbeStepResult `json:"steps,omitempty"`
+	Message         string            `json:"message,omitempty"`
 }
 
 type ProbeOutputView struct {

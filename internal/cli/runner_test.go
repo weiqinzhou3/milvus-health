@@ -321,7 +321,7 @@ func TestCheckRunner_PassesBusinessReadProbeResultToAnalyzer(t *testing.T) {
 		K8sCollector: fakeK8sCollector{},
 		ReadProbe:    readProbe,
 		RWProbe: &fakeRWProbe{
-			result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe not implemented in this iteration"},
+			result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe disabled"},
 		},
 		Analyzer: analyzer,
 	}
@@ -343,7 +343,7 @@ func TestCheckRunner_DoesNotRunRWProbeWhenDisabled(t *testing.T) {
 
 	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
 	rwProbe := &fakeRWProbe{
-		result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe not implemented in this iteration"},
+		result: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "rw probe disabled"},
 	}
 	runner := cli.DefaultCheckRunner{
 		Loader: fakeLoader{cfg: &model.Config{
@@ -370,6 +370,50 @@ func TestCheckRunner_DoesNotRunRWProbeWhenDisabled(t *testing.T) {
 		t.Fatalf("RWProbe.Run() calls = %d, want 0", rwProbe.calls)
 	}
 	if analyzer.input.Snapshot.RWProbe.Status != model.CheckStatusSkip || analyzer.input.Snapshot.RWProbe.Enabled {
+		t.Fatalf("Snapshot.RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
+	}
+}
+
+func TestCheckRunner_RunsRWProbeWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	rwProbe := &fakeRWProbe{
+		result: model.RWProbeResult{
+			Status:          model.CheckStatusPass,
+			Enabled:         true,
+			InsertRows:      3,
+			VectorDim:       4,
+			CleanupEnabled:  true,
+			CleanupExecuted: true,
+			Message:         "rw probe completed successfully",
+		},
+	}
+	runner := cli.DefaultCheckRunner{
+		Loader: fakeLoader{cfg: &model.Config{
+			Probe: model.ProbeConfig{
+				RW: model.RWProbeConfig{Enabled: true, Cleanup: true, InsertRows: 3, VectorDim: 4},
+			},
+		}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{Name: "demo", MilvusURI: "127.0.0.1:19530", Namespace: "milvus", MilvusVersion: "2.6.1", ArchProfile: model.ArchProfileV26},
+		},
+		K8sCollector: fakeK8sCollector{},
+		RWProbe:      rwProbe,
+		Analyzer:     analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if rwProbe.calls != 1 {
+		t.Fatalf("RWProbe.Run() calls = %d, want 1", rwProbe.calls)
+	}
+	if analyzer.input.Snapshot.RWProbe.Status != model.CheckStatusPass || !analyzer.input.Snapshot.RWProbe.CleanupExecuted {
 		t.Fatalf("Snapshot.RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
 	}
 }

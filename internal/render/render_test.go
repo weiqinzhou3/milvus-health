@@ -56,7 +56,26 @@ func sampleResult() *model.AnalysisResult {
 					},
 				},
 			},
-			RW: model.RWProbeResult{Status: model.CheckStatusSkip, Enabled: false, Message: "stub"},
+			RW: model.RWProbeResult{
+				Status:          model.CheckStatusPass,
+				Enabled:         true,
+				InsertRows:      3,
+				VectorDim:       4,
+				CleanupEnabled:  true,
+				CleanupExecuted: true,
+				TestDatabase:    "milvus_health_test_1700000000000000000",
+				TestCollection:  "rw_probe",
+				Message:         "rw probe completed successfully",
+				StepResults: []model.ProbeStepResult{
+					{Name: "cleanup-stale-databases", Success: true, DurationMS: 1},
+					{Name: "create-database", Success: true, DurationMS: 2},
+					{Name: "create-collection", Success: true, DurationMS: 3},
+					{Name: "insert", Success: true, DurationMS: 4},
+					{Name: "flush", Success: true, DurationMS: 5},
+					{Name: "query", Success: true, DurationMS: 6},
+					{Name: "cleanup", Success: true, DurationMS: 7},
+				},
+			},
 		},
 		Inventory: &model.ClusterInventory{
 			Milvus: model.MilvusInventory{
@@ -173,7 +192,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "RW Probe: status=pass enabled=true insert_rows=3 vector_dim=4 cleanup_enabled=true cleanup_executed=true message=rw probe completed successfully", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -225,6 +244,12 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "Business Read Probe Targets:\n- default.book: action=query success=true duration_ms=12 row_count=123") {
 		t.Fatalf("detail=true should include business read probe targets: %s", out)
+	}
+	if !strings.Contains(string(out), "RW Probe Detail: test_database=milvus_health_test_1700000000000000000 test_collection=rw_probe insert_rows=3 vector_dim=4 cleanup_enabled=true cleanup_executed=true") {
+		t.Fatalf("detail=true should include rw probe detail: %s", out)
+	}
+	if !strings.Contains(string(out), "RW Probe Steps:\n- cleanup-stale-databases: success=true duration_ms=1") {
+		t.Fatalf("detail=true should include rw probe steps: %s", out)
 	}
 }
 
@@ -282,6 +307,18 @@ func TestJSONRenderer_DetailFalse_OmitsBusinessReadTargets(t *testing.T) {
 	}
 	if strings.Contains(string(out), "\"targets\"") {
 		t.Fatalf("detail=false should omit business read targets: %s", out)
+	}
+}
+
+func TestJSONRenderer_DetailFalse_OmitsRWProbeSteps(t *testing.T) {
+	t.Parallel()
+
+	out, err := (render.JSONRenderer{}).Render(sampleResult(), render.RenderOptions{Detail: false})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(string(out), "\"steps\"") {
+		t.Fatalf("detail=false should omit rw probe steps: %s", out)
 	}
 }
 

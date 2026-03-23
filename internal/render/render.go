@@ -59,6 +59,15 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		result.Probes.BusinessRead.MinSuccessTargets,
 		displayString(result.Probes.BusinessRead.Message, "unknown"),
 	)
+	fmt.Fprintf(&b, "RW Probe: status=%s enabled=%t insert_rows=%d vector_dim=%d cleanup_enabled=%t cleanup_executed=%t message=%s\n",
+		result.Probes.RW.Status,
+		result.Probes.RW.Enabled,
+		result.Probes.RW.InsertRows,
+		result.Probes.RW.VectorDim,
+		result.Probes.RW.CleanupEnabled,
+		result.Probes.RW.CleanupExecuted,
+		displayString(result.Probes.RW.Message, "unknown"),
+	)
 	if result.Inventory != nil {
 		fmt.Fprintf(&b, "Databases: %s\n", formatDatabases(result.Inventory.Milvus.Databases))
 	}
@@ -146,6 +155,26 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 			b.WriteString("\n")
 		}
 	}
+	if opts.Detail && result.Probes.RW.Enabled {
+		fmt.Fprintf(&b, "RW Probe Detail: test_database=%s test_collection=%s insert_rows=%d vector_dim=%d cleanup_enabled=%t cleanup_executed=%t\n",
+			displayString(result.Probes.RW.TestDatabase, "unknown"),
+			displayString(result.Probes.RW.TestCollection, "unknown"),
+			result.Probes.RW.InsertRows,
+			result.Probes.RW.VectorDim,
+			result.Probes.RW.CleanupEnabled,
+			result.Probes.RW.CleanupExecuted,
+		)
+		if len(result.Probes.RW.StepResults) > 0 {
+			b.WriteString("RW Probe Steps:\n")
+			for _, step := range result.Probes.RW.StepResults {
+				fmt.Fprintf(&b, "- %s: success=%t duration_ms=%d", step.Name, step.Success, step.DurationMS)
+				if step.Error != "" {
+					fmt.Fprintf(&b, " error=%s", step.Error)
+				}
+				b.WriteString("\n")
+			}
+		}
+	}
 	if opts.Detail && len(result.Checks) > 0 {
 		b.WriteString("Checks:\n")
 		for _, check := range result.Checks {
@@ -190,7 +219,15 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 
 	type probeOutputSummary struct {
 		BusinessRead businessReadSummary `json:"business_read"`
-		RW           model.RWProbeResult `json:"rw"`
+		RW           struct {
+			Status          model.CheckStatus `json:"status"`
+			Enabled         bool              `json:"enabled"`
+			InsertRows      int               `json:"insert_rows,omitempty"`
+			VectorDim       int               `json:"vector_dim,omitempty"`
+			CleanupEnabled  bool              `json:"cleanup_enabled,omitempty"`
+			CleanupExecuted bool              `json:"cleanup_executed,omitempty"`
+			Message         string            `json:"message,omitempty"`
+		} `json:"rw"`
 	}
 
 	payload := output{
@@ -209,7 +246,23 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 				MinSuccessTargets: result.Probes.BusinessRead.MinSuccessTargets,
 				Message:           result.Probes.BusinessRead.Message,
 			},
-			RW: result.Probes.RW,
+			RW: struct {
+				Status          model.CheckStatus `json:"status"`
+				Enabled         bool              `json:"enabled"`
+				InsertRows      int               `json:"insert_rows,omitempty"`
+				VectorDim       int               `json:"vector_dim,omitempty"`
+				CleanupEnabled  bool              `json:"cleanup_enabled,omitempty"`
+				CleanupExecuted bool              `json:"cleanup_executed,omitempty"`
+				Message         string            `json:"message,omitempty"`
+			}{
+				Status:          result.Probes.RW.Status,
+				Enabled:         result.Probes.RW.Enabled,
+				InsertRows:      result.Probes.RW.InsertRows,
+				VectorDim:       result.Probes.RW.VectorDim,
+				CleanupEnabled:  result.Probes.RW.CleanupEnabled,
+				CleanupExecuted: result.Probes.RW.CleanupExecuted,
+				Message:         result.Probes.RW.Message,
+			},
 		},
 		Inventory: result.Inventory,
 		Warnings:  result.Warnings,

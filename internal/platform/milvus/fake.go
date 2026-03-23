@@ -6,29 +6,39 @@ import (
 )
 
 type FakeClient struct {
-	Version           string
-	VersionErr        error
-	Databases         []string
-	DatabasesErr      error
-	Collections       map[string][]string
-	CollectionErrs    map[string]error
-	CollectionIDs     map[string]map[string]int64
-	CollectionIDErrs  map[string]map[string]error
-	RowCounts         map[string]map[string]int64
-	RowCountErrs      map[string]map[string]error
-	Descriptions      map[string]map[string]CollectionDescription
-	DescriptionErrs   map[string]map[string]error
-	LoadStates        map[string]map[string]LoadState
-	LoadStateErrs     map[string]map[string]error
-	QueryResults      map[string]map[string]QueryResult
-	QueryErrs         map[string]map[string]error
-	SearchResults     map[string]map[string]SearchResult
-	SearchErrs        map[string]map[string]error
-	LastQueryRequest  QueryRequest
-	LastSearchRequest SearchRequest
-	MetricsByType     map[string]string
-	MetricsErrs       map[string]error
-	Closed            bool
+	Version                     string
+	VersionErr                  error
+	Databases                   []string
+	DatabasesErr                error
+	CreateDatabaseErr           map[string]error
+	DropDatabaseErr             map[string]error
+	Collections                 map[string][]string
+	CollectionErrs              map[string]error
+	CreateCollectionErrs        map[string]map[string]error
+	DropCollectionErrs          map[string]map[string]error
+	CollectionIDs               map[string]map[string]int64
+	CollectionIDErrs            map[string]map[string]error
+	RowCounts                   map[string]map[string]int64
+	RowCountErrs                map[string]map[string]error
+	Descriptions                map[string]map[string]CollectionDescription
+	DescriptionErrs             map[string]map[string]error
+	LoadStates                  map[string]map[string]LoadState
+	LoadStateErrs               map[string]map[string]error
+	InsertResults               map[string]map[string]InsertResult
+	InsertErrs                  map[string]map[string]error
+	FlushErrs                   map[string]map[string]error
+	QueryResults                map[string]map[string]QueryResult
+	QueryErrs                   map[string]map[string]error
+	SearchResults               map[string]map[string]SearchResult
+	SearchErrs                  map[string]map[string]error
+	LastQueryRequest            QueryRequest
+	LastSearchRequest           SearchRequest
+	LastCreateCollectionRequest CreateCollectionRequest
+	LastInsertRequest           InsertRequest
+	Operations                  []string
+	MetricsByType               map[string]string
+	MetricsErrs                 map[string]error
+	Closed                      bool
 }
 
 func (f *FakeClient) GetVersion(ctx context.Context) (string, error) {
@@ -41,12 +51,50 @@ func (f *FakeClient) ListDatabases(ctx context.Context) ([]string, error) {
 	return append([]string(nil), f.Databases...), f.DatabasesErr
 }
 
+func (f *FakeClient) CreateDatabase(ctx context.Context, database string) error {
+	_ = ctx
+	f.Operations = append(f.Operations, "create-database:"+database)
+	if err := f.CreateDatabaseErr[database]; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *FakeClient) DropDatabase(ctx context.Context, database string) error {
+	_ = ctx
+	f.Operations = append(f.Operations, "drop-database:"+database)
+	if err := f.DropDatabaseErr[database]; err != nil {
+		return err
+	}
+	return nil
+}
+
 func (f *FakeClient) ListCollections(ctx context.Context, database string) ([]string, error) {
 	_ = ctx
+	f.Operations = append(f.Operations, "list-collections:"+database)
 	if err := f.CollectionErrs[database]; err != nil {
 		return nil, err
 	}
 	return append([]string(nil), f.Collections[database]...), nil
+}
+
+func (f *FakeClient) CreateCollection(ctx context.Context, req CreateCollectionRequest) error {
+	_ = ctx
+	f.LastCreateCollectionRequest = req
+	f.Operations = append(f.Operations, "create-collection:"+req.Database+"."+req.Collection)
+	if err := f.CreateCollectionErrs[req.Database][req.Collection]; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *FakeClient) DropCollection(ctx context.Context, database, collection string) error {
+	_ = ctx
+	f.Operations = append(f.Operations, "drop-collection:"+database+"."+collection)
+	if err := f.DropCollectionErrs[database][collection]; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (f *FakeClient) GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error) {
@@ -84,9 +132,29 @@ func (f *FakeClient) GetCollectionLoadState(ctx context.Context, database, colle
 	return LoadStateUnknown, nil
 }
 
+func (f *FakeClient) Insert(ctx context.Context, req InsertRequest) (InsertResult, error) {
+	_ = ctx
+	f.LastInsertRequest = req
+	f.Operations = append(f.Operations, "insert:"+req.Database+"."+req.Collection)
+	if err := f.InsertErrs[req.Database][req.Collection]; err != nil {
+		return InsertResult{}, err
+	}
+	return f.InsertResults[req.Database][req.Collection], nil
+}
+
+func (f *FakeClient) Flush(ctx context.Context, database, collection string) error {
+	_ = ctx
+	f.Operations = append(f.Operations, "flush:"+database+"."+collection)
+	if err := f.FlushErrs[database][collection]; err != nil {
+		return err
+	}
+	return nil
+}
+
 func (f *FakeClient) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
 	_ = ctx
 	f.LastQueryRequest = req
+	f.Operations = append(f.Operations, "query:"+req.Database+"."+req.Collection)
 	if err := f.QueryErrs[req.Database][req.Collection]; err != nil {
 		return QueryResult{}, err
 	}
@@ -96,6 +164,7 @@ func (f *FakeClient) Query(ctx context.Context, req QueryRequest) (QueryResult, 
 func (f *FakeClient) Search(ctx context.Context, req SearchRequest) (SearchResult, error) {
 	_ = ctx
 	f.LastSearchRequest = req
+	f.Operations = append(f.Operations, "search:"+req.Database+"."+req.Collection)
 	if err := f.SearchErrs[req.Database][req.Collection]; err != nil {
 		return SearchResult{}, err
 	}
