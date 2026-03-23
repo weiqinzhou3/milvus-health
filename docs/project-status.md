@@ -4,7 +4,7 @@ Last updated: 2026-03-23
 
 ## 1. Current conclusion
 
-The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, **Iteration D1 / Milvus Binlog Size**, **Iteration D1.1 / system_info parser compatibility**, **Iteration P1 / Business Read Probe**, and **Iteration P2 / RW Probe (minimal write/read closure)** on the real collection path.
+The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, **Iteration D1 / Milvus Binlog Size**, **Iteration D1.1 / system_info parser compatibility**, **Iteration P1 / Business Read Probe**, and **Iteration P2 / RW Probe (minimal write/read closure with create-index + load-collection await)** on the real collection path.
 
 This branch can now truthfully claim:
 
@@ -28,7 +28,7 @@ This branch can now truthfully claim:
 - real Kubernetes endpoint inventory is collected with `EndpointSlice` first and `Endpoints` fallback
 - `mq_type` now has minimal reliable detection: explicit config is honored, `pulsar`/`kafka` can be inferred conservatively from K8s service names, and `rocksmq` is supported via explicit config or alias normalization
 - real Business Read Probe is wired into `check`: configured `probe.read.targets` execute minimal `DescribeCollection -> row_count(best effort) -> load state(best effort) -> query -> optional search` probe flow, target-level evidence is preserved, and `min_success_targets` drives pass/warn/fail
-- real RW Probe is wired into `check`: when `probe.rw.enabled=true`, it executes `cleanup stale prefixed databases -> create database -> create collection -> insert -> flush -> query readback -> optional cleanup`, preserves step-level evidence, and surfaces cleanup execution/failure in summary, checks, and output
+- real RW Probe is wired into `check`: when `probe.rw.enabled=true`, it executes `cleanup stale prefixed databases -> create database -> create collection -> insert -> flush -> create-index -> load-collection(await) -> query`, followed by optional cleanup; it preserves step-level evidence and surfaces cleanup execution/failure in summary, checks, and output
 - `check` text/json output is now driven by real Milvus facts when Milvus is reachable
 
 This branch still should **not** be treated as having full P0 coverage. The RW probe is now present, but richer Milvus inventory metrics beyond row count and binlog size, Prometheus/component-metrics resource usage sources, the full analyzer rule matrix, and a fully closed standby judgment path are still out of scope or skeleton-only. Binlog size should also not yet be described as universally stable beyond the currently validated payload shapes.
@@ -65,7 +65,7 @@ Suggested stage sequence:
 | Kubernetes platform client | Minimally implemented | Real client methods for `ListPods`, `ListServices`, `ListEndpoints`, and `ListPodMetrics` now exist, with spec-aligned metrics degrade semantics |
 | Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are real for version/database/collection inventory, row count enrichment, and `binlog_size_bytes` enrichment; D1.1 extends `system_info` parsing to the observed nested/CamelCase 2.4.7 payload shape; `arch_profile` detection now accepts `v`-prefixed versions |
 | Kubernetes collector | Minimally implemented | Real pod/service/endpoint inventory collection is wired through the check runner; pod metrics, request/limit enrichment, ratio calculation, and partial/unavailable metrics semantics are now included; NodePort service details are preserved in rendered port strings |
-| Probes | Partially implemented | Business Read Probe real logic is implemented; RW Probe minimal write/read closure is implemented with stale-test cleanup, create/insert/flush/query flow, optional cleanup, and step-level evidence, but it is not yet the full spec §11.3 index/load/search path |
+| Probes | Partially implemented | Business Read Probe real logic is implemented; RW Probe minimal write/read closure is implemented with stale-test cleanup, create/insert/flush/create-index/load-collection(await)/query flow, optional cleanup, and step-level evidence, but it is not yet the full spec §11.3 search-verification path |
 | Tests | Implemented for this slice | Platform tests, K8s collector tests, Business Read Probe unit tests, RW Probe unit tests, runner tests, renderer golden tests, analyzer tests, command/integration tests, and smoke tests cover the current slice |
 | Examples | Implemented | Example outputs updated to current runtime behavior |
 
@@ -140,7 +140,8 @@ Suggested stage sequence:
 - temporary test database creation
 - temporary test collection creation with the fixed minimal schema (`id`, `vector`, `payload`)
 - minimal row insert and flush
-- minimal query readback validation
+- create-index and load-collection await before query
+- minimal query readback validation after load
 - configurable cleanup (`cleanup=true` drops temporary resources; `cleanup=false` keeps them)
 - RW probe step evidence included in detail output and analyzer check evidence
 
@@ -152,7 +153,7 @@ Suggested stage sequence:
 - vector field list
 - load state
 - shard / replica / partition detail beyond current minimal legacy compatibility structs
-- full spec-grade RW probe path with index creation, collection load, and search verification
+- full spec-grade RW probe path with search verification and broader spec coverage
 - full analyzer rule matrix
 - Prometheus / component metrics resource usage sources
 - standby / confidence advanced logic beyond minimal severity mapping
@@ -165,7 +166,7 @@ Suggested stage sequence:
 4. The analyzer is intentionally minimal and should not yet be described as a full operator-grade health analyzer.
 5. Example outputs still demonstrate the failure path because the bundled example config points at an unavailable local Milvus endpoint.
 6. Flat legacy packages under `internal/platform` and `internal/collectors` still exist for compatibility; the new real paths are under `internal/platform/milvus`, `internal/platform/k8s`, `internal/collectors/milvus`, and `internal/collectors/k8s`.
-7. The shipped RW Probe is intentionally the minimal query-based closure for this iteration. It does not yet implement the fuller spec-style index/load/search path.
+7. The shipped RW Probe is intentionally the minimal query-based closure for this iteration. It now includes `create-index` plus `load-collection(await)` before query, but it does not yet implement fuller spec-style search verification.
 8. Standby is still not fully closed: `require_probe_for_standby` and broader standby rule coverage are not yet fully implemented beyond the current minimal severity/confidence path.
 9. Prometheus-backed or component-metrics-backed resource usage sources are still not implemented.
 10. Binlog size parsing is now compatible with the validated snake_case payload and the observed Milvus 2.4.7 nested/CamelCase payload, but it should not yet be described as broadly validated across all historical payload variants.

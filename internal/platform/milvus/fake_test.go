@@ -2,6 +2,7 @@ package milvus_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	platformmilvus "github.com/weiqinzhou3/milvus-health/internal/platform/milvus"
@@ -51,5 +52,39 @@ func TestFakeClient_GetCollectionRowCount(t *testing.T) {
 	}
 	if got != 42 {
 		t.Fatalf("GetCollectionRowCount() = %d, want 42", got)
+	}
+}
+
+func TestFakeClient_QueryRequiresLoadedCollection(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		LoadStates: map[string]map[string]platformmilvus.LoadState{
+			"default": {"book": platformmilvus.LoadStateNotLoad},
+		},
+		QueryResults: map[string]map[string]platformmilvus.QueryResult{
+			"default": {"book": {ResultCount: 1}},
+		},
+	}
+
+	req := platformmilvus.QueryRequest{
+		Database:   "default",
+		Collection: "book",
+		Expr:       "id >= 0",
+		Limit:      1,
+	}
+	if _, err := client.Query(context.Background(), req); err == nil || !strings.Contains(err.Error(), "requires loaded collection") {
+		t.Fatalf("Query() error = %v, want loaded contract failure", err)
+	}
+	if err := client.LoadCollection(context.Background(), "default", "book"); err != nil {
+		t.Fatalf("LoadCollection() error = %v", err)
+	}
+
+	got, err := client.Query(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Query() after load error = %v", err)
+	}
+	if got.ResultCount != 1 {
+		t.Fatalf("Query() after load = %#v, want ResultCount=1", got)
 	}
 }

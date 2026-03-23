@@ -2,6 +2,7 @@ package milvus
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -184,6 +185,15 @@ func (f *FakeClient) Query(ctx context.Context, req QueryRequest) (QueryResult, 
 	f.Operations = append(f.Operations, "query:"+req.Database+"."+req.Collection)
 	if err := f.QueryErrs[req.Database][req.Collection]; err != nil {
 		return QueryResult{}, err
+	}
+	state := LoadStateUnknown
+	if dbStates, ok := f.LoadStates[req.Database]; ok {
+		if collectionState, ok := dbStates[req.Collection]; ok {
+			state = collectionState
+		}
+	}
+	if state != LoadStateLoaded {
+		return QueryResult{}, fmt.Errorf("query requires loaded collection, got load state %q", state)
 	}
 	return f.QueryResults[req.Database][req.Collection], nil
 }

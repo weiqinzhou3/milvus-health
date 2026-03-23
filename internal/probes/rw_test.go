@@ -87,6 +87,40 @@ func TestRWProbe_Run_SucceedsWithCleanup(t *testing.T) {
 	}
 }
 
+func TestRWProbe_Run_LoadsCollectionBeforeQuery(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		LoadStates: map[string]map[string]platformmilvus.LoadState{
+			testDB: {"rw_probe": platformmilvus.LoadStateNotLoad},
+		},
+		InsertResults: map[string]map[string]platformmilvus.InsertResult{
+			testDB: {"rw_probe": {InsertCount: 2}},
+		},
+		QueryResults: map[string]map[string]platformmilvus.QueryResult{
+			testDB: {"rw_probe": {ResultCount: 2}},
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, true, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusPass {
+		t.Fatalf("Status = %s, want pass", result.Status)
+	}
+	if got := client.LoadStates[testDB]["rw_probe"]; got != platformmilvus.LoadStateLoaded {
+		t.Fatalf("LoadState = %s, want loaded", got)
+	}
+	if !operationOccursBefore(client.Operations, "load-collection:"+testDB+".rw_probe", "query:"+testDB+".rw_probe") {
+		t.Fatalf("Operations = %#v, want load before query", client.Operations)
+	}
+}
+
 func TestRWProbe_Run_FailsWhenStaleCleanupFails(t *testing.T) {
 	t.Parallel()
 
@@ -517,4 +551,18 @@ func containsOperation(operations []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func operationOccursBefore(operations []string, first, second string) bool {
+	firstIndex := -1
+	secondIndex := -1
+	for i, operation := range operations {
+		if operation == first && firstIndex == -1 {
+			firstIndex = i
+		}
+		if operation == second && secondIndex == -1 {
+			secondIndex = i
+		}
+	}
+	return firstIndex >= 0 && secondIndex >= 0 && firstIndex < secondIndex
 }
