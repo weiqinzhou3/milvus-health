@@ -12,6 +12,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/milvus-io/milvus/client/v2/entity"
+	"github.com/milvus-io/milvus/client/v2/index"
 	milvussdk "github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/milvus-io/milvus/pkg/util/commonpbutil"
 	"github.com/milvus-io/milvus/pkg/util/crypto"
@@ -152,6 +153,30 @@ func (c *sdkClient) DropCollection(ctx context.Context, database, collection str
 	return client.DropCollection(callCtx, milvussdk.NewDropCollectionOption(collection))
 }
 
+func (c *sdkClient) CreateIndex(ctx context.Context, database, collection string) error {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	task, err := client.CreateIndex(callCtx, milvussdk.NewCreateIndexOption(collection, "vector", index.NewHNSWIndex(entity.L2, 16, 64)))
+	if err != nil {
+		return err
+	}
+	return task.Await(callCtx)
+}
+
 func (c *sdkClient) GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error) {
 	client := c.client
 	closer := func(context.Context) error { return nil }
@@ -266,6 +291,30 @@ func (c *sdkClient) GetCollectionLoadState(ctx context.Context, database, collec
 	default:
 		return LoadStateUnknown, nil
 	}
+}
+
+func (c *sdkClient) LoadCollection(ctx context.Context, database, collection string) error {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	task, err := client.LoadCollection(callCtx, milvussdk.NewLoadCollectionOption(collection))
+	if err != nil {
+		return err
+	}
+	return task.Await(callCtx)
 }
 
 func (c *sdkClient) Insert(ctx context.Context, req InsertRequest) (InsertResult, error) {

@@ -33,8 +33,10 @@ RW Probe Steps:
 - create-collection: success=true duration_ms=3
 - insert: success=true duration_ms=4
 - flush: success=true duration_ms=5
-- query: success=true duration_ms=6
-- cleanup: success=true duration_ms=7
+- create-index: success=true duration_ms=6
+- load-collection: success=true duration_ms=7
+- query: success=true duration_ms=8
+- cleanup: success=true duration_ms=9
 Checks:
 - stub-check [warn]: stub
   Recommendation: inspect fake pipeline

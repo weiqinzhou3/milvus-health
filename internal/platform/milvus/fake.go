@@ -16,6 +16,7 @@ type FakeClient struct {
 	CollectionErrs              map[string]error
 	CreateCollectionErrs        map[string]map[string]error
 	DropCollectionErrs          map[string]map[string]error
+	CreateIndexErrs             map[string]map[string]error
 	CollectionIDs               map[string]map[string]int64
 	CollectionIDErrs            map[string]map[string]error
 	RowCounts                   map[string]map[string]int64
@@ -24,6 +25,7 @@ type FakeClient struct {
 	DescriptionErrs             map[string]map[string]error
 	LoadStates                  map[string]map[string]LoadState
 	LoadStateErrs               map[string]map[string]error
+	LoadErrs                    map[string]map[string]error
 	InsertResults               map[string]map[string]InsertResult
 	InsertErrs                  map[string]map[string]error
 	FlushErrs                   map[string]map[string]error
@@ -97,6 +99,15 @@ func (f *FakeClient) DropCollection(ctx context.Context, database, collection st
 	return nil
 }
 
+func (f *FakeClient) CreateIndex(ctx context.Context, database, collection string) error {
+	_ = ctx
+	f.Operations = append(f.Operations, "create-index:"+database+"."+collection)
+	if err := f.CreateIndexErrs[database][collection]; err != nil {
+		return err
+	}
+	return nil
+}
+
 func (f *FakeClient) GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error) {
 	_ = ctx
 	if err := f.RowCountErrs[database][collection]; err != nil {
@@ -130,6 +141,22 @@ func (f *FakeClient) GetCollectionLoadState(ctx context.Context, database, colle
 		return state, nil
 	}
 	return LoadStateUnknown, nil
+}
+
+func (f *FakeClient) LoadCollection(ctx context.Context, database, collection string) error {
+	_ = ctx
+	f.Operations = append(f.Operations, "load-collection:"+database+"."+collection)
+	if err := f.LoadErrs[database][collection]; err != nil {
+		return err
+	}
+	if f.LoadStates == nil {
+		f.LoadStates = make(map[string]map[string]LoadState)
+	}
+	if f.LoadStates[database] == nil {
+		f.LoadStates[database] = make(map[string]LoadState)
+	}
+	f.LoadStates[database][collection] = LoadStateLoaded
+	return nil
 }
 
 func (f *FakeClient) Insert(ctx context.Context, req InsertRequest) (InsertResult, error) {
