@@ -322,6 +322,69 @@ func TestJSONRenderer_DetailFalse_OmitsRWProbeSteps(t *testing.T) {
 	}
 }
 
+func TestRenderers_RWProbeSkipSummaryIsConsistent(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Probes.RW = model.RWProbeResult{
+		Status:          model.CheckStatusSkip,
+		Enabled:         false,
+		InsertRows:      3,
+		VectorDim:       4,
+		CleanupEnabled:  false,
+		CleanupExecuted: false,
+		Message:         "rw probe disabled",
+	}
+
+	textOut, err := (render.TextRenderer{}).Render(result, render.RenderOptions{Detail: false})
+	if err != nil {
+		t.Fatalf("text Render() error = %v", err)
+	}
+	if !strings.Contains(string(textOut), "RW Probe: status=skip enabled=false insert_rows=3 vector_dim=4 cleanup_enabled=false cleanup_executed=false message=rw probe disabled") {
+		t.Fatalf("text output should include rw skip summary: %s", textOut)
+	}
+
+	jsonOut, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: false})
+	if err != nil {
+		t.Fatalf("json Render() error = %v", err)
+	}
+
+	var decoded struct {
+		Probes struct {
+			RW struct {
+				Status          model.CheckStatus `json:"status"`
+				Enabled         bool              `json:"enabled"`
+				InsertRows      int               `json:"insert_rows"`
+				VectorDim       int               `json:"vector_dim"`
+				CleanupEnabled  bool              `json:"cleanup_enabled"`
+				CleanupExecuted bool              `json:"cleanup_executed"`
+				Message         string            `json:"message"`
+			} `json:"rw"`
+		} `json:"probes"`
+	}
+	if err := json.Unmarshal(jsonOut, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.Probes.RW.Status != model.CheckStatusSkip {
+		t.Fatalf("RW status = %s, want skip", decoded.Probes.RW.Status)
+	}
+	if decoded.Probes.RW.Enabled {
+		t.Fatalf("RW enabled = %t, want false", decoded.Probes.RW.Enabled)
+	}
+	if decoded.Probes.RW.InsertRows != 3 || decoded.Probes.RW.VectorDim != 4 {
+		t.Fatalf("RW summary = %#v", decoded.Probes.RW)
+	}
+	if decoded.Probes.RW.CleanupEnabled || decoded.Probes.RW.CleanupExecuted {
+		t.Fatalf("RW cleanup flags = %#v, want disabled and not executed", decoded.Probes.RW)
+	}
+	if decoded.Probes.RW.Message != "rw probe disabled" {
+		t.Fatalf("RW message = %q, want %q", decoded.Probes.RW.Message, "rw probe disabled")
+	}
+	if strings.Contains(string(jsonOut), "\"steps\"") || strings.Contains(string(jsonOut), "\"test_database\"") || strings.Contains(string(jsonOut), "\"test_collection\"") {
+		t.Fatalf("detail=false should keep only rw summary fields: %s", jsonOut)
+	}
+}
+
 func TestJSONRenderer_UsesNullForMissingRatios(t *testing.T) {
 	t.Parallel()
 
