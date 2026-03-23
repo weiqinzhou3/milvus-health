@@ -4,184 +4,130 @@ Last updated: 2026-03-23
 
 ## 1. Current conclusion
 
-The current working branch now provides **Iteration A2 / Milvus Inventory Enrichment**, **Iteration B / Kubernetes Basic Status Collection**, **Iteration B2 / Kubernetes Metrics Enrichment**, **Iteration D1 / Milvus Binlog Size**, **Iteration D1.1 / system_info parser compatibility**, **Iteration P1 / Business Read Probe**, and **Iteration P2 / RW Probe (minimal write/read closure with create-index + load-collection await)** on the real collection path.
+`main` 当前已经合并 P0、P1、P2 迭代成果，不再应被描述为 skeleton、stub，或“只有静态校验、没有真实巡检能力”的仓库。
 
-This branch can now truthfully claim:
+当前 `main` 可以被准确描述为：
 
-- real Milvus SDK connection is wired into `check`
-- real `milvus_version` is collected
-- `arch_profile` is derived from the real version using the spec v1.2 mapping, including `v`-prefixed versions such as `v2.4.7` and `v2.6.1`
-- real database names and per-database collection name lists are collected
-- real per-collection row count collection is wired through `GetCollectionStatistics`
-- real cluster total row count is reported when all collection row counts are available
-- Milvus binlog size collection remains sourced from `GetMetrics("system_info")` / DataCoord quota metrics
-- D1 exposed a real Milvus 2.4.7 parser-compatibility gap: some `system_info` payloads report binlog metrics under `nodes_info[].infos.quota_metrics.TotalBinlogSize` / `CollectionBinlogSize`
-- D1.1 updates the parser to accept both snake_case fake-test payloads and the observed 2.4.7 nested/CamelCase payload shape
-- binlog size still degrades to `null` / `unknown` instead of failing the whole inventory when metrics collection fails or the payload cannot be parsed
-- real Kubernetes pod basic status collection is wired into `check`
-- real Kubernetes pod CPU/memory usage collection is wired into `check` when metrics-server is available
-- real Kubernetes pod CPU/memory request and limit collection is wired into `check`
-- real Kubernetes pod usage/limit and usage/request ratio rendering is wired into text/json output, with `null` / `unknown` degrade semantics when metrics are missing
-- real Kubernetes metrics degrade semantics are now surfaced, including `metrics-server not found`, `insufficient permissions`, and partial metrics coverage
-- real Kubernetes service inventory is collected
-- NodePort service ports now render as `port:nodePort/protocol` for detail output, for example `3000:30031/tcp`
-- real Kubernetes endpoint inventory is collected with `EndpointSlice` first and `Endpoints` fallback
-- `mq_type` now has minimal reliable detection: explicit config is honored, `pulsar`/`kafka` can be inferred conservatively from K8s service names, and `rocksmq` is supported via explicit config or alias normalization
-- real Business Read Probe is wired into `check`: configured `probe.read.targets` execute minimal `DescribeCollection -> row_count(best effort) -> load state(best effort) -> query -> optional search` probe flow, target-level evidence is preserved, and `min_success_targets` drives pass/warn/fail
-- real RW Probe is wired into `check`: when `probe.rw.enabled=true`, it executes `cleanup stale prefixed databases -> create database -> create collection -> insert -> flush -> create-index -> load-collection(await) -> query`, followed by optional cleanup; it preserves step-level evidence and surfaces cleanup execution/failure in summary, checks, and output
-- `check` text/json output is now driven by real Milvus facts when Milvus is reachable
+- 一个具备真实 Milvus / Kubernetes 巡检能力的早期可交付版本
+- `check` 已接入真实 Milvus SDK、真实 Kubernetes client-go、真实 inventory 采集，以及真实 Probe
+- `validate` 是独立的静态配置校验入口；真实环境连通性、inventory 与 probe 都在 `check` 中执行
+- `text` / `json` 输出、`--detail`、退出码、样例配置与样例输出都已经形成可用闭环
 
-This branch still should **not** be treated as having full P0 coverage. The RW probe is now present, but richer Milvus inventory metrics beyond row count and binlog size, Prometheus/component-metrics resource usage sources, the full analyzer rule matrix, and a fully closed standby judgment path are still out of scope or skeleton-only. Binlog size should also not yet be described as universally stable beyond the currently validated payload shapes.
+## 2. Milestone status
 
-## 2. Stage assessment
-
-Current stage: **Stage 6 / RW Probe minimal write/read closure added on top of real Milvus inventory, binlog size, Kubernetes basic status plus metrics/resource usage, and Business Read Probe**
-
-Suggested next stage target: **Stage 7 - Detail-mode enrichment, analyzer expansion, and standby closure**
-
-Suggested stage sequence:
-
-1. Skeleton
-2. Real Milvus inventory vertical slice
-3. Real Milvus inventory enrichment
-4. Kubernetes metrics/resource usage
-5. Analyzer rule expansion
-6. Business Read Probe
-7. RW Probe
-8. Detail-mode enrichment and operator usability polish
-
-## 3. Module status overview
-
-| Module | Status | Current assessment |
+| Milestone | Status | Notes |
 |---|---|---|
-| CLI (`cmd`) | Implemented | `check` / `validate` / `version` command path exists and `check` now reaches real Milvus collection |
-| App entry (`main.go`) | Implemented | Standard CLI entry already exists |
-| Config loading | Implemented | YAML loading is present |
-| Config validation | Implemented for current contract | Static validation, defaulting, and CLI override path are wired before collection |
-| Output rendering | Partially implemented | `text` / `json` renderers now expose real Milvus version/database/collection facts, total row count, total `binlog_size_bytes`, per-collection `binlog_size_bytes`, Business Read Probe summary, RW Probe summary (`enabled`, `insert_rows`, `vector_dim`, `cleanup_enabled`, `cleanup_executed`, `message`), plus K8s pod/service/endpoint counts, pod CPU/memory usage, request/limit facts, ratio fields, and metrics degrade summaries; detail mode includes minimal Milvus, Business Read Probe target detail, RW Probe step detail, and K8s detail, including NodePort `port:nodePort/protocol` rendering |
-| Exit-code mapping | Implemented | Pass/Warn/Fail/error mapping path exists |
-| Analyzer | Minimal runtime path | Analyzer consumes collected Milvus and K8s facts plus Business Read Probe and RW Probe results, warns on partial row count, partial/unknown binlog size, pod not ready, restart_count > 0, metrics unavailable/partial, usage/limit ratio threshold breaches, and probe warn/fail/skip states; cleanup failure is surfaced through RW Probe failure evidence; it is not yet a full P0 rules engine or full standby analyzer |
-| Milvus platform client | Minimally implemented | Real client methods for `GetVersion`, `ListDatabases`, `CreateDatabase`, `DropDatabase`, `ListCollections`, `CreateCollection`, `DropCollection`, collection ID lookup, per-collection row count, minimal `DescribeCollection`, load-state lookup, `Insert`, `Flush`, `Query`, `Search`, and `GetMetrics("system_info")` now exist |
-| Kubernetes platform client | Minimally implemented | Real client methods for `ListPods`, `ListServices`, `ListEndpoints`, and `ListPodMetrics` now exist, with spec-aligned metrics degrade semantics |
-| Milvus collector | Minimally implemented | `CollectClusterInfo` and `CollectInventory` are real for version/database/collection inventory, row count enrichment, and `binlog_size_bytes` enrichment; D1.1 extends `system_info` parsing to the observed nested/CamelCase 2.4.7 payload shape; `arch_profile` detection now accepts `v`-prefixed versions |
-| Kubernetes collector | Minimally implemented | Real pod/service/endpoint inventory collection is wired through the check runner; pod metrics, request/limit enrichment, ratio calculation, and partial/unavailable metrics semantics are now included; NodePort service details are preserved in rendered port strings |
-| Probes | Partially implemented | Business Read Probe real logic is implemented; RW Probe minimal write/read closure is implemented with stale-test cleanup, create/insert/flush/create-index/load-collection(await)/query flow, optional cleanup, and step-level evidence, but it is not yet the full spec §11.3 search-verification path |
-| Tests | Implemented for this slice | Platform tests, K8s collector tests, Business Read Probe unit tests, RW Probe unit tests, runner tests, renderer golden tests, analyzer tests, command/integration tests, and smoke tests cover the current slice |
-| Examples | Implemented | Example outputs updated to current runtime behavior |
+| P0 | Completed and merged | 真实 Milvus/K8s 基础采集、配置加载校验、渲染、退出码链路已闭环 |
+| P1 | Completed and merged | Business Read Probe 已接入真实 Milvus 路径 |
+| P2 | Completed and merged | RW Probe 最小写读闭环已接入真实 Milvus 路径 |
 
-## 4. What is implemented in this branch
+这里的 “P0 / P1 / P2 completed” 指当前仓库定义的这三轮交付范围已经完成并合并到 `main`，不等于长期 roadmap 上所有后续增强项都已完成。
 
-### 4.1 Real Milvus collection path
+## 3. Capability scope on `main`
 
-- Milvus SDK client factory under `internal/platform/milvus`
-- real version collection
-- real database listing
-- real collection listing per database
-- real per-collection row count via `GetCollectionStatistics`
-- real total row count when all collection row counts are available
-- real per-collection collection ID lookup via `DescribeCollection`
-- real per-collection and total `binlog_size_bytes` via `GetMetrics("system_info")`
-- parser compatibility for both snake_case test payloads and the observed Milvus 2.4.7 nested/CamelCase `quota_metrics` payload shape
-- arch profile detection based on real version
+### 3.1 CLI and config
 
-### 4.2 Check runner orchestration
+- `check` / `validate` / `version` 命令路径均已存在
+- YAML 加载、默认值注入、CLI override、静态校验已接通
+- `cluster.milvus.uri`、`output.format`、`probe.read.*`、`probe.rw.*`、`rules.resource_warn_ratio` 等关键字段已有约束
 
-`check` now follows this minimal path:
+### 3.2 Real Milvus collection
 
-1. load config
-2. apply defaults
-3. apply CLI overrides
-4. validate config
-5. collect Milvus cluster info
-6. collect Milvus inventory
-7. collect Kubernetes pod/service/endpoint inventory
-8. execute Business Read Probe
-9. execute RW Probe when enabled
-10. assemble snapshot and checks
-11. run minimal analyzer
-12. render text/json output
+- 真实 Milvus SDK 连接已接入 `check`
+- 已采集：
+  - `milvus_version`
+  - `arch_profile`
+  - 数据库列表
+  - 每库集合列表
+  - 每集合 `row_count`
+  - 集群总 `row_count`
+  - 每集合与总 `binlog_size_bytes`
+- `arch_profile` 识别已覆盖 `v2.4` / `v2.6` 路径，并兼容 `v` 前缀版本号
 
-### 4.3 Real facts now visible in output
+### 3.3 Real Kubernetes collection
 
-- `cluster.milvus_version`
-- `cluster.arch_profile`
-- `cluster.mq_type`
-- `inventory.milvus.database_count`
-- `inventory.milvus.collection_count`
-- `inventory.milvus.total_row_count`
-- `inventory.milvus.total_binlog_size_bytes`
-- `inventory.milvus.databases[].name`
-- `inventory.milvus.databases[].collections[]`
-- `inventory.milvus.collections[].row_count`
-- `inventory.milvus.collections[].binlog_size_bytes`
-- `summary.total_row_count`
-- `summary.total_binlog_size_bytes`
-- `summary.pod_count`
-- `summary.service_count`
-- `summary.endpoint_count`
-- `probes.business_read.status`
-- `probes.business_read.configured_targets`
-- `probes.business_read.successful_targets`
-- `probes.business_read.min_success_targets`
-- `probes.rw.status`
-- `probes.rw.enabled`
-- `probes.rw.insert_rows`
-- `probes.rw.vector_dim`
-- `probes.rw.cleanup_enabled`
-- `probes.rw.cleanup_executed`
-- `inventory.k8s.pods[]`
-- `inventory.k8s.services[]`
-- `inventory.k8s.endpoints[]`
+- 真实 Kubernetes client-go 已接入 `check`
+- 已采集：
+  - Pods
+  - Services
+  - Endpoints
+  - Pod CPU/Memory request 与 limit
+  - metrics-server 提供的 CPU/Memory usage
+- 已实现 degrade 语义：
+  - `metrics-server not found`
+  - `insufficient permissions`
+  - partial metrics coverage
 
-### 4.4 RW Probe minimal closure
+### 3.4 Real probes
 
-- test database naming via `probe.rw.test_database_prefix`
-- stale prefixed database cleanup before the formal probe starts
-- temporary test database creation
-- temporary test collection creation with the fixed minimal schema (`id`, `vector`, `payload`)
-- minimal row insert and flush
-- create-index and load-collection await before query
-- minimal query readback validation after load
-- configurable cleanup (`cleanup=true` drops temporary resources; `cleanup=false` keeps them)
-- RW probe step evidence included in detail output and analyzer check evidence
+- Business Read Probe 已接入真实路径：
+  - `DescribeCollection`
+  - `row_count` best effort
+  - `load state` best effort
+  - `query`
+  - `optional search`
+- RW Probe 已接入真实路径：
+  - cleanup stale prefixed databases
+  - create database
+  - create collection
+  - insert
+  - flush
+  - create-index
+  - load-collection(await)
+  - query
+  - optional cleanup
 
-## 5. What is intentionally not implemented in this branch
+### 3.5 Output and analysis
 
-- collection size
-- total data size
-- index count / index type
-- vector field list
-- load state
-- shard / replica / partition detail beyond current minimal legacy compatibility structs
-- full spec-grade RW probe path with search verification and broader spec coverage
-- full analyzer rule matrix
-- Prometheus / component metrics resource usage sources
-- standby / confidence advanced logic beyond minimal severity mapping
+- `text` / `json` 输出已反映真实采集结果
+- `--detail` 已展开：
+  - Milvus inventory
+  - collection detail
+  - K8s pod/service/endpoint detail
+  - Business Read Probe target detail
+  - RW Probe step detail
+  - `checks`
+- Analyzer 已能基于真实结果给出最小可用 PASS / WARN / FAIL 判断，并处理连接失败、inventory 缺失、probe skip/fail、K8s metrics 缺失、Pod readiness/restart、usage/limit ratio 等场景
 
-## 6. Known gaps and technical debt
+## 4. What this repository should no longer claim
 
-1. `mq_type` detection is intentionally conservative: only explicit config and clear `pulsar` / `kafka` service-name signals are recognized automatically; otherwise it remains `unknown`.
-2. Row count collection currently degrades to `unknown` on a per-collection basis if `GetCollectionStatistics` fails for that collection; the inventory path stays successful but total row count also becomes `unknown`.
-3. Collection size / index detail / load-state detail and total data size remain out of scope beyond the current row count and binlog size slice.
-4. The analyzer is intentionally minimal and should not yet be described as a full operator-grade health analyzer.
-5. Example outputs still demonstrate the failure path because the bundled example config points at an unavailable local Milvus endpoint.
-6. Flat legacy packages under `internal/platform` and `internal/collectors` still exist for compatibility; the new real paths are under `internal/platform/milvus`, `internal/platform/k8s`, `internal/collectors/milvus`, and `internal/collectors/k8s`.
-7. The shipped RW Probe is intentionally the minimal query-based closure for this iteration. It now includes `create-index` plus `load-collection(await)` before query, but it does not yet implement fuller spec-style search verification.
-8. Standby is still not fully closed: `require_probe_for_standby` and broader standby rule coverage are not yet fully implemented beyond the current minimal severity/confidence path.
-9. Prometheus-backed or component-metrics-backed resource usage sources are still not implemented.
-10. Binlog size parsing is now compatible with the validated snake_case payload and the observed Milvus 2.4.7 nested/CamelCase payload, but it should not yet be described as broadly validated across all historical payload variants.
+以下旧口径已经不再符合当前 `main`：
 
-## 7. Validation status
+- “still skeleton”
+- “check is stub”
+- “validate only static, no real network” 作为整个项目状态的总结
+- “no real Milvus SDK / K8s client / inventory / probes”
 
-The branch currently passes:
+准确说法应是：
+
+- `validate` 仍然是静态配置校验命令
+- `check` 已经是连接真实 Milvus / K8s 并执行真实 probe 的巡检命令
+
+## 5. Known limitations
+
+- 当前 analyzer 仍然偏保守，尚未成为完整的 operator-grade 规则引擎
+- `standby` 路径仍未完全闭环；当前结果更偏向保守表达
+- RW Probe 当前是最小可用 query-based closure，还不是更完整的 search-verification 版本
+- Business Read Probe 只有在配置 `anns_field` 时才会进入 search 分支
+- K8s 资源使用率依赖 `metrics-server` 与权限；缺失时按 degrade 语义处理
+- `binlog_size_bytes` 解析已覆盖当前验证过的 payload 形态，但尚未声称覆盖所有历史变体
+- [examples/config.example.yaml](../examples/config.example.yaml) 故意使用失败路径示例，便于快速演示 detail 输出；它不是生产环境配置
+- `version` 子命令的版本字符串仍是占位值，正式 release cut 时需要单独更新
+
+## 6. Validation status
+
+当前仓库应至少通过：
 
 - `go test ./...`
 - `go build ./...`
+- `./bin/milvus-health validate --config examples/config.example.yaml`
+- `./bin/milvus-health check --config examples/config.example.yaml --format text --detail`
+- `./bin/milvus-health check --config examples/config.example.yaml --format json --detail`
 
-## 8. Collaboration rule
+## 7. Documentation sync note
 
-For this repository, work is not done unless:
+本文件、[README.md](../README.md)、[CHANGELOG.md](../CHANGELOG.md)、[examples/output.text.example.txt](../examples/output.text.example.txt)、[examples/output.json.example.json](../examples/output.json.example.json) 应保持同步，统一反映：
 
-1. code is committed on a dedicated branch
-2. the branch is pushed to GitHub
-3. branch / commit / changed files / commands run are reported back
+- `main` 已完成 P0 / P1 / P2
+- 仓库已具备真实巡检能力
+- 当前阶段是“早期可交付版本”，而不是 skeleton/stub
