@@ -134,6 +134,26 @@ func (p DefaultRWProbe) Run(ctx context.Context, cfg *model.Config) (result mode
 		return result, nil
 	}
 
+	step = runProbeStep("create-index", func() error {
+		return client.CreateIndex(ctx, result.TestDatabase, result.TestCollection)
+	})
+	result.StepResults = append(result.StepResults, step)
+	if !step.Success {
+		result.Status = model.CheckStatusFail
+		result.Message = fmt.Sprintf("create index failed: %s", step.Error)
+		return result, nil
+	}
+
+	step = runProbeStep("load-collection", func() error {
+		return client.LoadCollection(ctx, result.TestDatabase, result.TestCollection)
+	})
+	result.StepResults = append(result.StepResults, step)
+	if !step.Success {
+		result.Status = model.CheckStatusFail
+		result.Message = fmt.Sprintf("load collection failed: %s", step.Error)
+		return result, nil
+	}
+
 	step = runProbeStep("query", func() error {
 		queryResult, err := client.Query(ctx, platformmilvus.QueryRequest{
 			Database:   result.TestDatabase,

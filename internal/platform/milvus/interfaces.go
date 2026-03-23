@@ -20,10 +20,12 @@ type Client interface {
 	ListCollections(ctx context.Context, database string) ([]string, error)
 	CreateCollection(ctx context.Context, req CreateCollectionRequest) error
 	DropCollection(ctx context.Context, database, collection string) error
+	CreateIndex(ctx context.Context, database, collection string) error
 	GetCollectionID(ctx context.Context, database, collection string) (int64, error)
 	GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error)
 	DescribeCollection(ctx context.Context, database, collection string) (CollectionDescription, error)
 	GetCollectionLoadState(ctx context.Context, database, collection string) (LoadState, error)
+	LoadCollection(ctx context.Context, database, collection string) error
 	Insert(ctx context.Context, req InsertRequest) (InsertResult, error)
 	Flush(ctx context.Context, database, collection string) error
 	Query(ctx context.Context, req QueryRequest) (QueryResult, error)

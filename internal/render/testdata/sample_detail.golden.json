@@ -78,14 +78,24 @@
           "duration_ms": 5
         },
         {
-          "name": "query",
+          "name": "create-index",
           "success": true,
           "duration_ms": 6
         },
         {
-          "name": "cleanup",
+          "name": "load-collection",
           "success": true,
           "duration_ms": 7
+        },
+        {
+          "name": "query",
+          "success": true,
+          "duration_ms": 8
+        },
+        {
+          "name": "cleanup",
+          "success": true,
+          "duration_ms": 9
         }
       ],
       "message": "rw probe completed successfully"
