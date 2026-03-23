@@ -188,6 +188,14 @@ const (
 )
 ```
 
+**Check status enum：**
+- `pass`
+- `fail`
+- `warn`
+- `skip`
+
+`skip` 表示该检查因配置或策略未执行，不代表异常，也不代表通过。
+
 ### 5.2 配置模型
 
 ```go
@@ -232,8 +240,48 @@ type ProbeConfig struct {
 }
 
 type ReadProbeConfig struct {
-    MinSuccessTargets int               `yaml:"min_success_targets"`
-    Targets           []ReadProbeTarget `yaml:"targets"`
+    Enabled              bool              `yaml:"enabled"`
+    MinSuccessTargets    int               `yaml:"min_success_targets"`
+    Targets              []ReadProbeTarget `yaml:"targets"`
+    enabledSet           bool              `yaml:"-"`
+    minSuccessTargetsSet bool              `yaml:"-"`
+}
+
+// Enabled 默认 true；YAML 反序列化必须保留“未配置”和“显式 false”的区别
+func (c *ReadProbeConfig) UnmarshalYAML(unmarshal func(any) error) error {
+    type rawReadProbeConfig struct {
+        Enabled           *bool             `yaml:"enabled"`
+        MinSuccessTargets *int              `yaml:"min_success_targets"`
+        Targets           []ReadProbeTarget `yaml:"targets"`
+    }
+
+    var raw rawReadProbeConfig
+    if err := unmarshal(&raw); err != nil {
+        return err
+    }
+
+    c.Targets = raw.Targets
+    c.enabledSet = raw.Enabled != nil
+    if raw.Enabled != nil {
+        c.Enabled = *raw.Enabled
+    } else {
+        c.Enabled = false
+    }
+    c.minSuccessTargetsSet = raw.MinSuccessTargets != nil
+    if raw.MinSuccessTargets != nil {
+        c.MinSuccessTargets = *raw.MinSuccessTargets
+    } else {
+        c.MinSuccessTargets = 0
+    }
+    return nil
+}
+
+func (c ReadProbeConfig) HasExplicitEnabled() bool {
+    return c.enabledSet
+}
+
+func (c ReadProbeConfig) HasExplicitMinSuccessTargets() bool {
+    return c.minSuccessTargetsSet
 }
 
 type ReadProbeTarget struct {
@@ -273,6 +321,29 @@ type OutputConfig struct {
     Detail bool         `yaml:"detail"`
 }
 ```
+
+**YAML 配置示例：**
+
+```yaml
+probe:
+  read:
+    enabled: true
+    min_success_targets: 1
+    targets:
+      - database: default
+        collection: book
+        query_expr: "id >= 0"
+        output_fields:
+          - id
+  rw:
+    enabled: true
+    test_database_prefix: milvus_health_test
+    cleanup: true
+    insert_rows: 100
+    vector_dim: 128
+```
+
+`ReadProbeConfig.Enabled` 类型为 `bool`，默认值为 `true`；未配置时由 `DefaultApplier` 按向后兼容语义补齐。
 
 ### 5.3 CLI 运行参数模型
 
@@ -433,6 +504,10 @@ type CheckResult struct {
 
 ```go
 type BusinessReadProbeResult struct {
+    Name              string                     `json:"name"`
+    Enabled           bool                       `json:"enabled"`
+    // Executed 表示本轮是否实际发起过至少一次 Business Read Probe target 动作
+    Executed          bool                       `json:"executed"`
     Status            CheckStatus                `json:"status"`
     ConfiguredTargets int                        `json:"configured_targets"`
     SuccessfulTargets int                        `json:"successful_targets"`
@@ -552,6 +627,10 @@ type ValidationReport struct {
     Warnings []string // 非阻断性警告，由 CLI 层决定是否打印到 stderr
 }
 ```
+
+**默认值职责：**
+- `DefaultApplier.Apply(cfg)` 在 `!cfg.Probe.Read.HasExplicitEnabled()` 时将 `cfg.Probe.Read.Enabled = true`
+- `DefaultApplier.Apply(cfg)` 在 `!cfg.Probe.Read.HasExplicitMinSuccessTargets()` 时将 `cfg.Probe.Read.MinSuccessTargets = 1`
 
 **校验职责拆分：**
 
@@ -784,6 +863,12 @@ type ProbeScope struct {
 }
 ```
 
+**disabled 语义：**
+- `cfg.Probe.Read.Enabled = false` 时，`BusinessReadProbe.Run` 不得调用任何 Milvus 读探测 API
+- 返回 `BusinessReadProbeResult{Name:"business-read-probe", Enabled:false, Executed:false, Status:CheckStatusSkip, Message:"disabled by config"}`
+- 同时返回一条 `CheckResult{Name:"business-read-probe", Category:"probe", Status:CheckStatusSkip, Severity:"info", Message:"disabled by config"}`
+- 该 `skip` 为中性结果，保留在输出契约中，但不触发 overall fail
+
 **search 向量构造（[-1.0, 1.0] 值域，固定种子 42）：**
 
 ```go
@@ -813,7 +898,7 @@ DescribeCollection 成功，配置了 anns_field:
   -> search 失败 -> Success=false（禁止静默降级为 query 成功）
 ```
 
-**scope 过滤：** 不匹配的 target 记为 skip，不计入 `configured_targets`。全部过滤 -> probe 状态 `skip`。
+**scope 过滤：** 不匹配的 target 记为 skip，不计入 `configured_targets`。全部过滤 -> probe 状态 `skip`，`Executed=false`。
 
 ### 9.2 RWProbe
 
@@ -865,6 +950,8 @@ type K8sAnalyzer interface {
 }
 
 type ProbeAnalyzer interface {
+    // 只消费 probe 层已产出的结果做汇总判定；
+    // cfg.Probe.Read.Enabled=false 时的 disabled skip 必须由 BusinessReadProbe.Run 直接返回
     Analyze(br model.BusinessReadProbeResult, rw model.RWProbeResult, cfg *model.Config) []model.CheckResult
 }
 
@@ -890,7 +977,8 @@ type SummaryOutput struct {
 type SummaryBuilder interface {
     Build(checks []model.CheckResult, snapshot model.MetadataSnapshot, cfg *model.Config) SummaryOutput
     ComputeFinalResult(checks []model.CheckResult) model.FinalResult
-    // arch_profile=unknown 时必须返回 ConfidenceLow
+    // 任一模块 status=skip、arch_profile=unknown 或存在 FAIL 时必须返回 ConfidenceLow
+    // 这包括 probe.read.enabled=false 导致的 business-read-probe=skip
     ComputeConfidence(
         result model.FinalResult,
         br model.BusinessReadProbeResult,
@@ -899,6 +987,18 @@ type SummaryBuilder interface {
     ) model.ConfidenceLevel
 }
 ```
+
+**Probe / summary 语义补充：**
+- `skip` 表示 probe 因配置或策略未执行，不代表通过，也不代表异常
+- `cfg.Probe.Read.Enabled = false` 时，`BusinessReadProbe.Run` 必须直接短路返回：
+  `BusinessReadProbeResult{Name:"business-read-probe", Enabled:false, Executed:false, Status:CheckStatusSkip, Message:"disabled by config"}`
+- 同一次 `BusinessReadProbe.Run` 调用必须同时返回一条
+  `CheckResult{Name:"business-read-probe", Category:"probe", Status:CheckStatusSkip, Severity:"info", Message:"disabled by config"}`
+- `ProbeAnalyzer` 不负责生成上述 disabled skip，只消费 probe/check 结果做汇总
+- 显式关闭的 Business Read Probe 不应导致 overall fail
+- analyzer / summary 统计 probe 成功数量或失败数量时，只统计 `Enabled=true` 且 `Executed=true` 的 probe；`skip` 不计入成功数量，也不计入失败数量
+- `SummaryBuilder.ComputeConfidence` 必须将“任一模块 `status=skip`”视为 `ConfidenceLow` 触发条件之一；
+  这包括 `probe.read.enabled = false` 导致的 `business-read-probe=skip`，实现不得返回 `high` 或 `medium`
 
 ### 10.2 K8sAnalyzer `arch_profile=unknown` 处理伪代码
 
@@ -941,10 +1041,10 @@ func (a *DefaultK8sAnalyzer) Analyze(
 | Pod CrashLoopBackOff => FAIL（仅非 Ignored Pod） | `K8sAnalyzer` |
 | v2.6 集群发现 v2.4 旧 coordinator => WARN | `K8sAnalyzer` |
 | metrics partial => WARN | `K8sAnalyzer` |
-| Probe 判定（search 禁止静默降级） | `ProbeAnalyzer` |
+| Probe 汇总判定（只消费 probe 结果；不负责 `enabled=false` -> `skip` 产出） | `ProbeAnalyzer` |
 | standby 计算 | `StandbyAnalyzer` |
 | PASS/WARN/FAIL + exit code + Warnings/Failures | `SummaryBuilder` |
-| confidence 计算（unknown=low） | `SummaryBuilder` |
+| confidence 计算（任一模块 `skip` / `arch_profile=unknown` / FAIL => low；含 `business-read-probe=skip`） | `SummaryBuilder` |
 
 ---
 
@@ -1136,6 +1236,9 @@ func (r *DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (
 
     // 9. Probe（可关闭）
     if moduleEnabled(opts.Modules, "probe") {
+        // cfg.Probe.Read.Enabled=false 时，ReadProbe.Run 必须短路返回：
+        // status=skip, enabled=false, executed=false, message="disabled by config"
+        // 并返回一条 business-read-probe skip CheckResult；不得发起任何 Milvus 读探测 API
         br, brChecks, _ := r.ReadProbe.Run(ctx, cfg, probeScopeFromOpts(opts))
         allChecks = append(allChecks, brChecks...)
         snapshot.BusinessReadProbe = br
@@ -1253,11 +1356,11 @@ platform -> 无内部依赖（不导入 model 包）
 | inventory + binlog size | `collectors/milvus` | `CollectInventory` + `fetchBinlogSizes` |
 | Pod/Service 状态（版本感知）| `collectors/k8s` | `CollectStatus(archProfile)` |
 | `arch_profile=unknown` skip 产出 | `analyzers/k8s` | `K8sAnalyzer.Analyze` |
-| Business Read Probe（严格 Action 状态机）| `probes` | `BusinessReadProbe.Run` |
+| Business Read Probe（严格 Action 状态机；`enabled=false` -> `skip`）| `probes` | `BusinessReadProbe.Run` |
 | RW Probe（含预检清理）| `probes` | `RWProbe.Run` |
 | PASS/WARN/FAIL + Warnings/Failures | `analyzers` | `SummaryBuilder.Build` |
 | standby 计算 | `analyzers` | `StandbyAnalyzer.ComputeStandby` |
-| confidence 计算（unknown=low）| `analyzers` | `SummaryBuilder.ComputeConfidence` |
+| confidence 计算（任一模块 `skip` / `arch_profile=unknown` / FAIL => low；含 `business-read-probe=skip`）| `analyzers` | `SummaryBuilder.ComputeConfidence` |
 | text/json 输出（shadow struct 省略 checks）| `render` | `Renderer.Render(result, RenderOptions)` |
 
 ---
@@ -1311,7 +1414,7 @@ internal/
 │   ├── k8s.go                   # unknown->skip；Ignored Pod 跳过判定；pod_restart_fail->FAIL
 │   ├── probe.go
 │   ├── standby.go
-│   └── summary.go               # SummaryOutput；confidence unknown=low
+│   └── summary.go               # SummaryOutput；任一模块 skip/unknown/fail -> confidence low
 └── render/
     ├── factory.go
     ├── options.go

@@ -176,7 +176,7 @@ milvus-health check --config ./config.yaml | tee report.txt
 - 直接抓取 Milvus 组件 metrics 端口 **不作为首版通用 K8s usage 数据源**，见 §14.4
 
 #### D. 业务探测
-- Business Read Probe
+- Business Read Probe（可选主动探测能力，可通过配置显式关闭）
 - RW Probe
 
 #### E. 分析结论
@@ -317,6 +317,7 @@ milvus-health version
 | `k8s.kubeconfig` | 否 | string | kubeconfig 路径 |
 | `k8s.resource_usage.source` | 否 | string | `auto`（默认）/ `metrics-api` / `disabled`；控制是否采集 Pod CPU/Memory usage |
 | `dependencies.mq.type` | 否 | string | `pulsar` / `kafka` / `woodpecker` / `unknown` |
+| `probe.read.enabled` | 否 | bool | 是否执行 Business Read Probe，默认 `true` |
 | `probe.read.targets` | 否 | list | 业务读探测目标列表 |
 | `probe.read.min_success_targets` | 否 | int | 最少成功目标数，默认 1 |
 | `probe.rw.enabled` | 否 | bool | 是否执行 RW Probe |
@@ -338,6 +339,8 @@ milvus-health version
 - `auto` 语义：优先尝试 `metrics.k8s.io`；若数据源不存在或权限不足，则按 §14 结构化降级
 - `metrics-api` 语义：强制尝试 `metrics.k8s.io`；不存在或权限不足时仍按 §14 降级，不得直接 FAIL
 - `disabled` 语义：不尝试动态 usage 采集，只输出静态 request/limit 与基础 Pod/Service/Endpoint 事实
+- `probe.read.enabled` 默认为 `true`；未配置时按 `true` 处理，保持向后兼容
+- `probe.read.enabled = false` 时，不执行 Business Read Probe；输出中仍保留 `business-read-probe` 检查项，状态为 `skip`，message 固定为 `disabled by config`
 - `rules.resource_warn_ratio` 对应 **usage/limit** 占比，不是 usage/request 占比
 - `rules.pod_restart_fail` 须严格大于 `rules.pod_restart_warn`；两者都配置时 `Validator` 校验此约束
 
@@ -365,6 +368,7 @@ dependencies:
 
 probe:
   read:
+    enabled: true
     min_success_targets: 1
     targets:
       - database: default
@@ -399,6 +403,10 @@ output:
   detail: false
 ```
 
+### 7.4 向后兼容说明
+- 本次新增 `probe.read.enabled` 为向后兼容扩展
+- 未配置 `probe.read.enabled` 时默认按 `true` 处理，不改变现有行为
+
 ---
 
 ## 8. 数据模型
@@ -431,6 +439,8 @@ output:
 | `actual` | any | 实际值（可选） |
 | `expected` | any | 期望值（可选） |
 | `duration_ms` | int | 执行耗时（可选） |
+
+`status = skip` 表示该检查因配置或策略未执行，不代表异常，也不代表通过。
 
 ### 8.3 AnalysisResult
 
@@ -468,6 +478,12 @@ output:
 7. Business Read Probe 结果
 8. RW Probe 结果
 9. 风险项清单、失败项清单
+
+当 `probe.read.enabled = false` 时，text 输出仍需保留 `business-read-probe` 检查项，建议至少包含：
+
+```text
+business-read-probe [skip]: disabled by config
+```
 
 ### 9.4 detail 模式
 开启 `--detail` 后额外输出：
@@ -527,6 +543,8 @@ Pod Detail (detail=true)
 - milvus-debug:       [ignored: phase-succeeded]
 
 Business Read Probe
+- Enabled: true
+- Executed: true
 - Configured Targets: 2
 - Successful Targets: 1
 - Result: WARN
@@ -581,6 +599,9 @@ Failures
   },
   "probes": {
     "business_read": {
+      "name": "business-read-probe",
+      "enabled": true,
+      "executed": true,
       "status": "warn",
       "configured_targets": 2,
       "successful_targets": 1,
@@ -607,6 +628,8 @@ Failures
 **样例说明：**
 - `total_binlog_size_bytes` 在 GetMetrics 失败时输出 `null`（不省略字段）
 - `checks` 在 `Detail=false` 时输出空数组 `[]`；`Detail=true` 时输出完整列表
+- 当 `probe.read.enabled = false` 时，JSON 输出仍必须保留 `probes.business_read` 结果项，至少包含 `name = "business-read-probe"`、`status = "skip"`、`message = "disabled by config"`
+- `probes.business_read` 的 disabled 场景语义必须为 `enabled = false`、`executed = false`、`status = "skip"`、`message = "disabled by config"`
 
 ### 9.8 输出样例约束
 - text / json 样例必须在仓库 `examples/` 中同步存在
@@ -618,9 +641,11 @@ Failures
 ## 10. Business Read Probe 规格
 
 ### 10.1 目标
-验证 restore 后业务数据真实可读。
+验证 restore 后业务数据真实可读。该能力为可选主动探测能力，可通过配置显式关闭。
 
 ### 10.2 输入
+
+- `probe.read.enabled`：默认 `true`；为 `false` 时不执行任何 Business Read Probe 动作，按 §10.4 输出 `skip`
 
 每个 target 至少包含 `database`、`collection`，可选：
 - `query_expr`：未提供时使用 `"id >= 0"`
@@ -650,6 +675,7 @@ Failures
 **未配置 `anns_field` 时：** Action = `"query"`，steps 1-4 全部成功则 target 成功。
 
 ### 10.4 成功标准
+- `probe.read.enabled = false` → `skip`；不执行 Business Read Probe，输出中仍保留 `business-read-probe` 检查项，message = `disabled by config`；不因用户主动关闭而导致整体结果 `fail`
 - 未配置任何 targets → `skip`
 - 成功数 **>= `min_success_targets`**（含等号）→ `pass`
 - 成功数 > 0 且 < `min_success_targets` → `warn`
@@ -837,7 +863,7 @@ Milvus 原生支持通过组件 metrics 端口（通常 `:9091/metrics`）暴露
 - Milvus 可连接
 - 元数据采集成功
 - 关键 Pod 健康，**或** K8s 模块被关闭，**或** `arch_profile=unknown`（此时 Pod 健康判定为 skip，视为已满足，但 confidence 降级为 low）
-- Business Read Probe 为 `pass` 或 `skip`
+- Business Read Probe 为 `pass` 或 `skip`（含 `probe.read.enabled = false` 的显式关闭场景）
 - RW Probe 为 `pass` 或 `skip`
 - 无 FAIL 级检查项
 
@@ -870,6 +896,8 @@ Milvus 原生支持通过组件 metrics 端口（通常 `:9091/metrics`）暴露
 
 优先级：从上到下匹配，取第一个满足的。
 
+- `probe.read.enabled = false` 导致的 `business-read-probe = skip` 属于“存在任一模块被 skip”，因此 confidence 必须为 `low`，不得输出 `high` 或 `medium`
+
 ---
 
 ## 17. standby 判定
@@ -893,6 +921,7 @@ Milvus 原生支持通过组件 metrics 端口（通常 `:9091/metrics`）暴露
 
 ### 17.3 跳过 probe 时的语义
 - `require_probe_for_standby = true` 且 probe 均为 skip → standby 必须为 false
+- `probe.read.enabled = false` 产生的 `business-read-probe = skip` 视为“未执行”，不计为已成功执行 probe
 - 结果中标注：`"standby confidence downgraded because probes were skipped"`
 
 ---
