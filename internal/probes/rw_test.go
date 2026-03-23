@@ -115,6 +115,223 @@ func TestRWProbe_Run_FailsWhenStaleCleanupFails(t *testing.T) {
 	}
 }
 
+func TestRWProbe_Run_SucceedsWithoutCleanupWhenCleanupDisabled(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		InsertResults: map[string]map[string]platformmilvus.InsertResult{
+			testDB: {"rw_probe": {InsertCount: 2}},
+		},
+		QueryResults: map[string]map[string]platformmilvus.QueryResult{
+			testDB: {"rw_probe": {ResultCount: 2}},
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, false, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusPass {
+		t.Fatalf("Status = %s, want pass", result.Status)
+	}
+	if result.CleanupExecuted {
+		t.Fatal("CleanupExecuted should be false when cleanup is disabled")
+	}
+	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "insert", "flush", "query"}
+	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
+		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
+	}
+	if containsOperation(client.Operations, "drop-collection:"+testDB+".rw_probe") {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+	if containsOperation(client.Operations, "drop-database:"+testDB) {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+}
+
+func TestRWProbe_Run_DoesNotCleanupAfterFailureWhenCleanupDisabled(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		InsertResults: map[string]map[string]platformmilvus.InsertResult{
+			testDB: {"rw_probe": {InsertCount: 2}},
+		},
+		QueryErrs: map[string]map[string]error{
+			testDB: {"rw_probe": errors.New("query timeout")},
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, false, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if !strings.Contains(result.Message, "query failed") {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	if result.CleanupExecuted {
+		t.Fatal("CleanupExecuted should be false when cleanup is disabled")
+	}
+	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "insert", "flush", "query"}
+	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
+		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
+	}
+	if containsOperation(client.Operations, "drop-collection:"+testDB+".rw_probe") {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+	if containsOperation(client.Operations, "drop-database:"+testDB) {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+}
+
+func TestRWProbe_Run_FailsWhenCreateDatabaseFails(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		CreateDatabaseErr: map[string]error{
+			testDB: errors.New("database quota exceeded"),
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, true, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if !strings.Contains(result.Message, "create database failed") {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	wantSteps := []string{"cleanup-stale-databases", "create-database"}
+	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
+		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
+	}
+	if result.CleanupExecuted {
+		t.Fatal("CleanupExecuted should be false when database creation fails")
+	}
+	if containsOperation(client.Operations, "create-collection:"+testDB+".rw_probe") {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+}
+
+func TestRWProbe_Run_FailsWhenCreateCollectionFailsAndCleansDatabase(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		CreateCollectionErrs: map[string]map[string]error{
+			testDB: {"rw_probe": errors.New("create collection failed")},
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, true, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if !strings.Contains(result.Message, "create collection failed") {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	if !result.CleanupExecuted {
+		t.Fatal("CleanupExecuted should be true after collection creation failure")
+	}
+	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "cleanup"}
+	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
+		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
+	}
+	if !containsOperation(client.Operations, "drop-database:"+testDB) {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+	if containsOperation(client.Operations, "drop-collection:"+testDB+".rw_probe") {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+}
+
+func TestRWProbe_Run_FailsWhenInsertCountMismatches(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		InsertResults: map[string]map[string]platformmilvus.InsertResult{
+			testDB: {"rw_probe": {InsertCount: 1}},
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, true, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if !strings.Contains(result.Message, "insert failed") {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	if got := result.StepResults[len(result.StepResults)-2]; got.Name != "insert" || got.Success {
+		t.Fatalf("insert step = %#v", got)
+	}
+	if !result.CleanupExecuted {
+		t.Fatal("CleanupExecuted should be true after insert failure when cleanup is enabled")
+	}
+}
+
+func TestRWProbe_Run_FailsWhenFlushFails(t *testing.T) {
+	t.Parallel()
+
+	testDB := "milvus_health_test_1700000000000000000"
+	client := &platformmilvus.FakeClient{
+		InsertResults: map[string]map[string]platformmilvus.InsertResult{
+			testDB: {"rw_probe": {InsertCount: 2}},
+		},
+		FlushErrs: map[string]map[string]error{
+			testDB: {"rw_probe": errors.New("flush timeout")},
+		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, true, 2, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if !strings.Contains(result.Message, "flush failed") {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	if got := result.StepResults[len(result.StepResults)-2]; got.Name != "flush" || got.Success {
+		t.Fatalf("flush step = %#v", got)
+	}
+	if !result.CleanupExecuted {
+		t.Fatal("CleanupExecuted should be true after flush failure when cleanup is enabled")
+	}
+}
+
 func TestRWProbe_Run_FailsWhenReadbackQueryFails(t *testing.T) {
 	t.Parallel()
 

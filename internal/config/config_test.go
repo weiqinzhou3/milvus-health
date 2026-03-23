@@ -288,9 +288,11 @@ func TestConfigValidator_Validate_Fail_WhenRWProbeVectorDimInvalid(t *testing.T)
 	cfg := validConfig()
 	cfg.Probe.RW.VectorDim = 0
 
-	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
 		t.Fatal("Validate() expected error")
 	}
+	assertHasFieldError(t, err, "probe.rw.vector_dim")
 }
 
 func TestConfigValidator_Validate_Fail_WhenRWProbeInsertRowsInvalid(t *testing.T) {
@@ -299,9 +301,11 @@ func TestConfigValidator_Validate_Fail_WhenRWProbeInsertRowsInvalid(t *testing.T
 	cfg := validConfig()
 	cfg.Probe.RW.InsertRows = 0
 
-	if err := (config.ConfigValidator{}).Validate(cfg); err == nil {
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
 		t.Fatal("Validate() expected error")
 	}
+	assertHasFieldError(t, err, "probe.rw.insert_rows")
 }
 
 func TestConfigValidator_Validate_Fail_WhenRWProbePrefixMissing(t *testing.T) {
@@ -315,6 +319,23 @@ func TestConfigValidator_Validate_Fail_WhenRWProbePrefixMissing(t *testing.T) {
 		t.Fatal("Validate() expected error")
 	}
 	assertHasFieldError(t, err, "probe.rw.test_database_prefix")
+}
+
+func TestConfigValidator_Validate_Success_WhenRWProbeDisabledWithZeroValues(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.RW = model.RWProbeConfig{
+		Enabled:            false,
+		TestDatabasePrefix: "",
+		Cleanup:            false,
+		InsertRows:         0,
+		VectorDim:          0,
+	}
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
 }
 
 func TestConfigValidator_Validate_Success_WhenTokenAndPasswordBothSet(t *testing.T) {

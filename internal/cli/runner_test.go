@@ -71,6 +71,7 @@ type fakeReadProbe struct {
 	result model.BusinessReadProbeResult
 	err    error
 	scope  probes.ProbeScope
+	calls  int
 }
 
 type fakeRWProbe struct {
@@ -100,6 +101,7 @@ func (f fakeK8sCollector) Collect(ctx context.Context, cfg *model.Config) (model
 func (f *fakeReadProbe) Run(ctx context.Context, cfg *model.Config, scope probes.ProbeScope) (model.BusinessReadProbeResult, error) {
 	_ = ctx
 	_ = cfg
+	f.calls++
 	f.scope = scope
 	return f.result, f.err
 }
@@ -415,6 +417,74 @@ func TestCheckRunner_RunsRWProbeWhenEnabled(t *testing.T) {
 	}
 	if analyzer.input.Snapshot.RWProbe.Status != model.CheckStatusPass || !analyzer.input.Snapshot.RWProbe.CleanupExecuted {
 		t.Fatalf("Snapshot.RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
+	}
+}
+
+func TestCheckRunner_RWProbeDoesNotChangeBusinessReadSnapshot(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	readProbe := &fakeReadProbe{
+		result: model.BusinessReadProbeResult{
+			Status:            model.CheckStatusPass,
+			ConfiguredTargets: 1,
+			SuccessfulTargets: 1,
+			MinSuccessTargets: 1,
+			Message:           "1/1 read probe targets succeeded",
+		},
+	}
+	rwProbe := &fakeRWProbe{
+		result: model.RWProbeResult{
+			Status:          model.CheckStatusFail,
+			Enabled:         true,
+			InsertRows:      2,
+			VectorDim:       4,
+			CleanupEnabled:  true,
+			CleanupExecuted: true,
+			Message:         "query failed: timeout; cleanup failed: drop test collection: forbidden",
+			StepResults: []model.ProbeStepResult{
+				{Name: "query", Success: false, Error: "timeout"},
+				{Name: "cleanup", Success: false, Error: "drop test collection: forbidden"},
+			},
+		},
+	}
+	runner := cli.DefaultCheckRunner{
+		Loader: fakeLoader{cfg: &model.Config{
+			Probe: model.ProbeConfig{
+				Read: model.ReadProbeConfig{
+					MinSuccessTargets: 1,
+					Targets:           []model.ReadProbeTarget{{Database: "default", Collection: "book"}},
+				},
+				RW: model.RWProbeConfig{Enabled: true, Cleanup: true, InsertRows: 2, VectorDim: 4},
+			},
+		}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{
+			clusterInfo: model.ClusterInfo{Name: "demo", MilvusURI: "127.0.0.1:19530", Namespace: "milvus", MilvusVersion: "2.6.1", ArchProfile: model.ArchProfileV26},
+		},
+		K8sCollector: fakeK8sCollector{},
+		ReadProbe:    readProbe,
+		RWProbe:      rwProbe,
+		Analyzer:     analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if readProbe.calls != 1 {
+		t.Fatalf("ReadProbe.Run() calls = %d, want 1", readProbe.calls)
+	}
+	if rwProbe.calls != 1 {
+		t.Fatalf("RWProbe.Run() calls = %d, want 1", rwProbe.calls)
+	}
+	if analyzer.input.Snapshot.BusinessReadProbe.Status != model.CheckStatusPass {
+		t.Fatalf("BusinessReadProbe = %#v", analyzer.input.Snapshot.BusinessReadProbe)
+	}
+	if analyzer.input.Snapshot.RWProbe.Status != model.CheckStatusFail {
+		t.Fatalf("RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
 	}
 }
 

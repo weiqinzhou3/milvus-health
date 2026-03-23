@@ -523,6 +523,49 @@ func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_SkipsRWProbeWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := analysisConfig()
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: cfg,
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+			RWProbe: model.RWProbeResult{
+				Status:          model.CheckStatusSkip,
+				Enabled:         false,
+				CleanupEnabled:  true,
+				CleanupExecuted: false,
+				Message:         "rw probe disabled",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Probes.RW.Status != model.CheckStatusSkip {
+		t.Fatalf("RW = %#v", result.Probes.RW)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "rw-probe" && check.Status == model.CheckStatusSkip && check.Message == "rw probe disabled" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("Failures = %#v, want none", result.Failures)
+	}
+}
+
 func TestAnalyzer_FailsWhenBusinessReadProbeFailsAndKeepsEvidence(t *testing.T) {
 	t.Parallel()
 
