@@ -1,149 +1,130 @@
 # milvus-health
 
-`milvus-health` 是一个面向 Milvus 集群的 Go CLI 巡检工具。项目目标是用标准 Unix CLI 风格输出明确的健康判断结果：
+`milvus-health` 是一个面向 Milvus 集群与其 Kubernetes 部署的 Go CLI 巡检工具。`main` 当前已经合并 P0、P1、P2 迭代，不再是 skeleton/stub 仓库，而是一个具备真实巡检能力的早期可交付版本。
+
+## 项目简介
+
+这个项目的目标是用标准 Unix CLI 风格给出稳定的巡检结果：
 
 - 正式结果输出到 `stdout`
-- 日志、warning、错误详情输出到 `stderr`
+- 错误、warning 与诊断信息保留在结构化结果里
 - 最终状态通过固定退出码表达
 
-当前仓库仍处于第一阶段：`工程初始化 + 项目骨架 + TDD 基础设施 + 最小可运行闭环`。这意味着它已经可以编译、测试、展示 CLI 结构，但主分支仍应被视为 skeleton，而不是已经具备真实巡检能力的交付版本。
+当前 `check` 已经接入真实 Milvus SDK、真实 Kubernetes client-go、真实 inventory 采集、Business Read Probe，以及最小可用的 RW Probe 闭环。
 
-## 文档入口
+## 当前能力范围
 
-- [docs/project-status.md](docs/project-status.md): 当前主分支状态、阶段判断、已实现/未实现边界。
-- [docs/dev-workflow.md](docs/dev-workflow.md): 多角色协作职责、Definition of Done、开发规则与推荐工作流。
-- [docs/README.md](docs/README.md): `docs/` 目录入口说明。
+- 真实 Milvus 连接与基础事实采集：`milvus_version`、`arch_profile`、数据库/集合清单、`row_count`、`binlog_size_bytes`
+- 真实 Kubernetes 采集：Pods、Services、Endpoints、request/limit、metrics-server 提供的 CPU/Memory usage，以及缺失时的 degrade 语义
+- 真实 Probe：
+  - Business Read Probe：`DescribeCollection -> row_count(best effort) -> load state(best effort) -> query -> optional search`
+  - RW Probe：`cleanup stale db -> create database -> create collection -> insert -> flush -> create-index -> load-collection(await) -> query -> optional cleanup`
+- 输出能力：`text` / `json`、`--detail` 明细、稳定退出码、`summary` / `checks` / `failures` / `warnings`
+- 配置能力：YAML 加载、默认值注入、静态校验、CLI 覆盖
+- 依赖识别：显式 `dependencies.mq.type`，或基于 Kubernetes service 名称的保守推断
 
-## 给外部模型的快速上下文
+## Quickstart
 
-如果你是外部分析模型，请先基于以下事实理解本仓库：
-
-- 这是一个 Go CLI 项目，不是脚本集合。
-- 当前实现重点是分层、契约、可测试性，不是业务完整度。
-- 当前 `check` 命令返回的是 stub analysis，不会连接真实 Milvus 或 K8s。
-- 当前 `validate` 命令只做最小 YAML 加载和静态校验，不发起任何网络请求。
-- `collectors`、`probes`、`platform` 目前只有接口或占位实现。
-- `render` 已有最小 `text/json` 输出，`json` 输出保证为纯 JSON。
-- 项目要求严格按 spec 和 interface design doc 演进，避免在骨架阶段提前塞入伪业务逻辑。
-
-## 当前明确支持的版本目标
-
-本仓库当前版本识别逻辑按本轮要求收敛为：
-
-- Milvus `2.4.7` -> `v24`
-- Milvus `2.6.x` -> `v26`
-- 其他版本 -> `unknown`
-
-这部分目前只体现在模型层版本识别与测试契约中，还没有下沉到真实 collector 或 probe 逻辑。
-
-## 当前已完成内容
-
-- Go module 初始化
-- `Makefile` 门禁
-- CLI 骨架：`check` / `validate` / `version`
-- `main.go` 入口
-- `internal/model` 最小领域模型
-- `internal/config` 最小 loader / validator / default applier / override applier
-- `internal/render` 最小 text/json renderer
-- `internal/cli` 最小 runner 与 exit code mapper
-- `examples/config.example.yaml`
-- `examples/output.text.example.txt`
-- `examples/output.json.example.json`
-- 基于 TDD 的首批单元测试与 smoke 测试
-
-## 当前未实现内容
-
-以下能力当前明确未做，分析时不要误判为“应该已经存在但漏了”：
-
-- 真实 Milvus SDK 接入
-- 真实 K8s client 接入
-- 真实 inventory 采集
-- 真实 Business Read Probe
-- 真实 RW Probe
-- 真实 analyzer 规则体系
-- 真实 collection / pod detail 明细
-- 复杂并发执行
-
-## 目录说明
-
-```text
-milvus-health/
-├── cmd/                CLI 命令注册
-├── internal/
-│   ├── cli/            runner、退出码映射
-│   ├── config/         配置加载、默认值、校验、CLI 覆盖
-│   ├── collectors/     采集接口占位
-│   ├── probes/         probe 接口占位
-│   ├── analyzers/      analyzer fake/stub
-│   ├── render/         text/json 渲染
-│   ├── model/          领域模型、枚举、错误模型
-│   └── platform/       外部客户端接口占位
-├── examples/           样例配置与样例输出
-├── docs/               项目内说明入口
-├── test/               CLI smoke 测试
-├── design_docs/        原始 spec 与 interface design doc
-├── main.go
-├── Makefile
-└── go.mod
+```bash
+make build
+./bin/milvus-health validate --config examples/config.example.yaml
+./bin/milvus-health check --config examples/config.example.yaml --format text --detail
+./bin/milvus-health check --config examples/config.example.yaml --format json --detail
 ```
 
-## 当前可用命令
+说明：
 
-- `milvus-health version`
-- `milvus-health check --help`
-- `milvus-health validate --help`
+- 构建产物位于 `./bin/milvus-health`
+- `examples/config.example.yaml` 默认使用 `127.0.0.1:19530`、`timeout_sec: 1`，并故意指向一个不存在的 kubeconfig，用于演示失败路径与 detail 输出
+- 因此 `validate` 应该成功；如果你没有准备真实 Milvus/K8s 环境，上述两个 `check` 通常会返回 `exit code 2`
+- 仓库内置的默认非 `--detail` 输出样例见 [examples/output.text.example.txt](examples/output.text.example.txt) 和 [examples/output.json.example.json](examples/output.json.example.json)；开启 `--detail` 时会在此基础上追加 inventory / checks / probe step 明细
 
-当前 `check` 命令需要配置文件路径，但执行结果仍是 stub 输出；其意义在于验证 CLI 编排、配置注入、渲染和退出码链路。
+## 最小配置说明
 
-## 本地使用
+最小必填字段：
+
+- `cluster.name`
+- `cluster.milvus.uri`
+
+最小示例：
+
+```yaml
+cluster:
+  name: demo-cluster
+  milvus:
+    uri: 127.0.0.1:19530
+
+output:
+  format: text
+```
+
+字段说明：
+
+- `cluster.milvus.uri` 必须是 `host:port`，不能带 `tcp://`、`http://` 等 scheme
+- `cluster.milvus.username`、`cluster.milvus.password`、`cluster.milvus.token` 为可选认证字段
+- `k8s.kubeconfig` 可选；未提供时会尝试 in-cluster config
+- `dependencies.mq.type` 可选，支持 `pulsar`、`kafka`、`rocksmq`、`unknown`、`woodpecker`
+- `output.format` 支持 `text` 或 `json`
+
+当前默认值：
+
+- `output.format = text`
+- `probe.read.min_success_targets = 1`
+- `probe.read.targets[*].query_expr = "id >= 0"`
+- `probe.read.targets[*].topk = 3`
+- `probe.rw.test_database_prefix = milvus_health_test`
+- `probe.rw.insert_rows = 100`
+- `probe.rw.vector_dim = 128`
+- `timeout_sec = 60`
+- `rules.resource_warn_ratio = 0.85`
+
+`validate` 负责配置加载、默认值与静态校验；真实连接、inventory 与 probe 执行发生在 `check`。
+
+完整样例配置见 [examples/config.example.yaml](examples/config.example.yaml)。
+
+## 输出说明
+
+`check` 的核心输出字段包括：
+
+- `summary`
+  - 聚合数据库数、集合数、总行数、总 binlog 大小、Pod/Service/Endpoint 数量，以及 K8s metrics 覆盖情况
+- `checks`
+  - 每条检查项都带有 `status`、`message`，可能还包含 `recommendation`、`evidence`、`actual`、`expected`
+  - `json` 模式下，只有开启 `--detail` 时才会输出完整 `checks`
+- `detail`
+  - `--detail` 会展开 inventory、collection 详情、pod/service/endpoint 详情、Business Read Probe 目标明细、RW Probe 步骤明细
+- `exit_code`
+  - `0` = PASS
+  - `1` = WARN
+  - `2` = FAIL
+  - `3` = config invalid
+  - `4` = runtime / render error
+
+## Real-env 注意事项
+
+- `probe.rw.enabled=true` 时，`check` 不再是纯只读命令；它会创建临时 database / collection，并在 `cleanup=true` 时尝试清理
+- 建议为 `probe.rw.test_database_prefix` 使用专门前缀，避免与真实业务库冲突
+- `cleanup=false` 只建议用于调试；否则会保留测试资源
+- 在集群外执行时，通常需要显式提供 `k8s.kubeconfig`
+- Kubernetes 资源使用率依赖 `metrics-server` 与 RBAC；缺失时会降级为 `warn` / `unknown`，而不是让整个命令崩溃
+- 样例配置故意展示失败路径；接入真实环境时，请替换 Milvus 地址、认证信息、namespace、kubeconfig，以及 probe 目标
+
+## 开发与测试命令
 
 ```bash
 make fmt
 make test
 make build
 make run-help
+go test ./...
+go build ./...
 ```
 
-构建产物输出到 `./bin/milvus-health`。
+## 文档入口
 
-## 配置说明
-
-配置样例见 [examples/config.example.yaml](examples/config.example.yaml)。
-
-当前已实现的最小配置约束：
-
-- `cluster.name` 必填
-- `cluster.milvus.uri` 必填，格式必须是 `host:port`
-- `cluster.milvus.uri` 不能带 `tcp://` 等 scheme
-- `output.format` 只接受 `text` 或 `json`
-- `probe.read.min_success_targets >= 0`
-
-认证字段已保留：
-
-- `cluster.milvus.username`
-- `cluster.milvus.password`
-- `cluster.milvus.token`
-
-当前尚未接入真实客户端，但后续实现会遵循 `token` 优先于 `password` 的约束。
-
-## 测试覆盖重点
-
-当前测试重点是“契约”，不是业务正确性：
-
-- 模型枚举与版本识别
-- YAML 加载与配置静态校验
-- 默认值与 CLI override
-- text/json 渲染契约
-- 退出码映射
-- runner 最小闭环
-- CLI smoke：`version` / `check --help` / `validate --help`
-
-## 建议的外部分析方向
-
-如果你要基于这个仓库做下一步分析，优先看这些问题：
-
-1. 当前模型层是否已经覆盖后续 collector/analyzer 所需的最小字段集。
-2. runner 编排接口是否足以支撑后续 fake -> real implementation 的平滑替换。
-3. config / render / exit code 的契约是否已经稳定，适合继续扩展。
-4. 哪些 stub 应该下一轮先替换成 fake，再替换成真实实现。
-5. 版本差异 `2.4.7` 与 `2.6.x` 应如何下沉到 collector 和 analyzer 的职责边界。
+- [CHANGELOG.md](CHANGELOG.md): 即将发布版本与已知限制摘要
+- [docs/project-status.md](docs/project-status.md): 当前 `main` 的能力边界与状态判断
+- [docs/dev-workflow.md](docs/dev-workflow.md): 分支、协作与交付规则
+- [docs/README.md](docs/README.md): `docs/` 目录入口
+- [design_docs/milvus-health-spec-v1.3.md](design_docs/milvus-health-spec-v1.3.md): 规格说明
+- [design_docs/milvus-health-interface-design-v0.7.md](design_docs/milvus-health-interface-design-v0.7.md): 接口设计说明
