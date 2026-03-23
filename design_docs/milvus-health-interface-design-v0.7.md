@@ -950,6 +950,8 @@ type K8sAnalyzer interface {
 }
 
 type ProbeAnalyzer interface {
+    // 只消费 probe 层已产出的结果做汇总判定；
+    // cfg.Probe.Read.Enabled=false 时的 disabled skip 必须由 BusinessReadProbe.Run 直接返回
     Analyze(br model.BusinessReadProbeResult, rw model.RWProbeResult, cfg *model.Config) []model.CheckResult
 }
 
@@ -975,7 +977,8 @@ type SummaryOutput struct {
 type SummaryBuilder interface {
     Build(checks []model.CheckResult, snapshot model.MetadataSnapshot, cfg *model.Config) SummaryOutput
     ComputeFinalResult(checks []model.CheckResult) model.FinalResult
-    // arch_profile=unknown 时必须返回 ConfidenceLow
+    // 任一模块 status=skip、arch_profile=unknown 或存在 FAIL 时必须返回 ConfidenceLow
+    // 这包括 probe.read.enabled=false 导致的 business-read-probe=skip
     ComputeConfidence(
         result model.FinalResult,
         br model.BusinessReadProbeResult,
@@ -987,9 +990,15 @@ type SummaryBuilder interface {
 
 **Probe / summary 语义补充：**
 - `skip` 表示 probe 因配置或策略未执行，不代表通过，也不代表异常
-- `business-read-probe` 在 `cfg.Probe.Read.Enabled = false` 时必须保留为 `status=skip`，message 固定为 `disabled by config`
+- `cfg.Probe.Read.Enabled = false` 时，`BusinessReadProbe.Run` 必须直接短路返回：
+  `BusinessReadProbeResult{Name:"business-read-probe", Enabled:false, Executed:false, Status:CheckStatusSkip, Message:"disabled by config"}`
+- 同一次 `BusinessReadProbe.Run` 调用必须同时返回一条
+  `CheckResult{Name:"business-read-probe", Category:"probe", Status:CheckStatusSkip, Severity:"info", Message:"disabled by config"}`
+- `ProbeAnalyzer` 不负责生成上述 disabled skip，只消费 probe/check 结果做汇总
 - 显式关闭的 Business Read Probe 不应导致 overall fail
 - analyzer / summary 统计 probe 成功数量或失败数量时，只统计 `Enabled=true` 且 `Executed=true` 的 probe；`skip` 不计入成功数量，也不计入失败数量
+- `SummaryBuilder.ComputeConfidence` 必须将“任一模块 `status=skip`”视为 `ConfidenceLow` 触发条件之一；
+  这包括 `probe.read.enabled = false` 导致的 `business-read-probe=skip`，实现不得返回 `high` 或 `medium`
 
 ### 10.2 K8sAnalyzer `arch_profile=unknown` 处理伪代码
 
@@ -1032,10 +1041,10 @@ func (a *DefaultK8sAnalyzer) Analyze(
 | Pod CrashLoopBackOff => FAIL（仅非 Ignored Pod） | `K8sAnalyzer` |
 | v2.6 集群发现 v2.4 旧 coordinator => WARN | `K8sAnalyzer` |
 | metrics partial => WARN | `K8sAnalyzer` |
-| Probe 判定（Business Read Probe `enabled=false` -> `skip`；search 禁止静默降级） | `ProbeAnalyzer` |
+| Probe 汇总判定（只消费 probe 结果；不负责 `enabled=false` -> `skip` 产出） | `ProbeAnalyzer` |
 | standby 计算 | `StandbyAnalyzer` |
 | PASS/WARN/FAIL + exit code + Warnings/Failures | `SummaryBuilder` |
-| confidence 计算（unknown=low） | `SummaryBuilder` |
+| confidence 计算（任一模块 `skip` / `arch_profile=unknown` / FAIL => low；含 `business-read-probe=skip`） | `SummaryBuilder` |
 
 ---
 
@@ -1351,7 +1360,7 @@ platform -> 无内部依赖（不导入 model 包）
 | RW Probe（含预检清理）| `probes` | `RWProbe.Run` |
 | PASS/WARN/FAIL + Warnings/Failures | `analyzers` | `SummaryBuilder.Build` |
 | standby 计算 | `analyzers` | `StandbyAnalyzer.ComputeStandby` |
-| confidence 计算（unknown=low）| `analyzers` | `SummaryBuilder.ComputeConfidence` |
+| confidence 计算（任一模块 `skip` / `arch_profile=unknown` / FAIL => low；含 `business-read-probe=skip`）| `analyzers` | `SummaryBuilder.ComputeConfidence` |
 | text/json 输出（shadow struct 省略 checks）| `render` | `Renderer.Render(result, RenderOptions)` |
 
 ---
@@ -1405,7 +1414,7 @@ internal/
 │   ├── k8s.go                   # unknown->skip；Ignored Pod 跳过判定；pod_restart_fail->FAIL
 │   ├── probe.go
 │   ├── standby.go
-│   └── summary.go               # SummaryOutput；confidence unknown=low
+│   └── summary.go               # SummaryOutput；任一模块 skip/unknown/fail -> confidence low
 └── render/
     ├── factory.go
     ├── options.go

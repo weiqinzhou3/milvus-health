@@ -896,6 +896,8 @@ Milvus 原生支持通过组件 metrics 端口（通常 `:9091/metrics`）暴露
 
 优先级：从上到下匹配，取第一个满足的。
 
+- `probe.read.enabled = false` 导致的 `business-read-probe = skip` 属于“存在任一模块被 skip”，因此 confidence 必须为 `low`，不得输出 `high` 或 `medium`
+
 ---
 
 ## 17. standby 判定
