@@ -304,6 +304,19 @@ func TestConfigValidator_Validate_Fail_WhenRWProbeInsertRowsInvalid(t *testing.T
 	}
 }
 
+func TestConfigValidator_Validate_Fail_WhenRWProbePrefixMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.RW.TestDatabasePrefix = ""
+
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	assertHasFieldError(t, err, "probe.rw.test_database_prefix")
+}
+
 func TestConfigValidator_Validate_Success_WhenTokenAndPasswordBothSet(t *testing.T) {
 	t.Parallel()
 

@@ -71,6 +71,18 @@ func (c *sdkClient) ListDatabases(ctx context.Context) ([]string, error) {
 	return databases, nil
 }
 
+func (c *sdkClient) CreateDatabase(ctx context.Context, database string) error {
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	return c.client.CreateDatabase(callCtx, milvussdk.NewCreateDatabaseOption(database))
+}
+
+func (c *sdkClient) DropDatabase(ctx context.Context, database string) error {
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	return c.client.DropDatabase(callCtx, milvussdk.NewDropDatabaseOption(database))
+}
+
 func (c *sdkClient) ListCollections(ctx context.Context, database string) ([]string, error) {
 	client := c.client
 	closer := func(context.Context) error { return nil }
@@ -94,6 +106,50 @@ func (c *sdkClient) ListCollections(ctx context.Context, database string) ([]str
 	}
 	sort.Strings(collections)
 	return collections, nil
+}
+
+func (c *sdkClient) CreateCollection(ctx context.Context, req CreateCollectionRequest) error {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if req.Database != "" {
+		scopedClient, err := c.newScopedClient(ctx, req.Database)
+		if err != nil {
+			return err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	schema := entity.NewSchema().
+		WithName(req.Collection).
+		WithField(entity.NewField().WithName("id").WithDataType(entity.FieldTypeInt64).WithIsPrimaryKey(true).WithIsAutoID(false)).
+		WithField(entity.NewField().WithName("vector").WithDataType(entity.FieldTypeFloatVector).WithDim(int64(req.VectorDim))).
+		WithField(entity.NewField().WithName("payload").WithDataType(entity.FieldTypeVarChar).WithMaxLength(256))
+	return client.CreateCollection(callCtx, milvussdk.NewCreateCollectionOption(req.Collection, schema))
+}
+
+func (c *sdkClient) DropCollection(ctx context.Context, database, collection string) error {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	return client.DropCollection(callCtx, milvussdk.NewDropCollectionOption(collection))
 }
 
 func (c *sdkClient) GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error) {
@@ -210,6 +266,68 @@ func (c *sdkClient) GetCollectionLoadState(ctx context.Context, database, collec
 	default:
 		return LoadStateUnknown, nil
 	}
+}
+
+func (c *sdkClient) Insert(ctx context.Context, req InsertRequest) (InsertResult, error) {
+	if len(req.IDs) == 0 {
+		return InsertResult{}, fmt.Errorf("insert requires at least one id")
+	}
+	if len(req.IDs) != len(req.Payloads) || len(req.IDs) != len(req.Vectors) {
+		return InsertResult{}, fmt.Errorf("insert column lengths must match")
+	}
+	if len(req.Vectors[0]) == 0 {
+		return InsertResult{}, fmt.Errorf("insert requires non-empty vectors")
+	}
+
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if req.Database != "" {
+		scopedClient, err := c.newScopedClient(ctx, req.Database)
+		if err != nil {
+			return InsertResult{}, err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	option := milvussdk.NewColumnBasedInsertOption(req.Collection).
+		WithInt64Column("id", req.IDs).
+		WithVarcharColumn("payload", req.Payloads).
+		WithFloatVectorColumn("vector", len(req.Vectors[0]), req.Vectors)
+	result, err := client.Insert(callCtx, option)
+	if err != nil {
+		return InsertResult{}, err
+	}
+	return InsertResult{InsertCount: result.InsertCount}, nil
+}
+
+func (c *sdkClient) Flush(ctx context.Context, database, collection string) error {
+	client := c.client
+	closer := func(context.Context) error { return nil }
+
+	if database != "" {
+		scopedClient, err := c.newScopedClient(ctx, database)
+		if err != nil {
+			return err
+		}
+		client = scopedClient
+		closer = scopedClient.Close
+	}
+	defer closer(ctx)
+
+	callCtx, cancel := c.withTimeout(ctx)
+	defer cancel()
+
+	task, err := client.Flush(callCtx, milvussdk.NewFlushOption(collection))
+	if err != nil {
+		return err
+	}
+	return task.Await(callCtx)
 }
 
 func (c *sdkClient) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {

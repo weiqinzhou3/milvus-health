@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/weiqinzhou3/milvus-health/internal/analyzers"
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
@@ -17,6 +18,8 @@ import (
 )
 
 func fakeRealDependencies() dependencies {
+	testDB := "milvus_health_test_1700000000000000000"
+
 	return dependencies{
 		checkRunner: cli.DefaultCheckRunner{
 			Loader:          config.YAMLLoader{},
@@ -112,7 +115,22 @@ func fakeRealDependencies() dependencies {
 					},
 				},
 			},
-			RWProbe:  probes.NoopRWProbe{},
+			RWProbe: probes.DefaultRWProbe{
+				Factory: platformmilvus.FakeClientFactory{
+					Client: &platformmilvus.FakeClient{
+						Databases: []string{"default"},
+						InsertResults: map[string]map[string]platformmilvus.InsertResult{
+							testDB: {"rw_probe": {InsertCount: 100}},
+						},
+						QueryResults: map[string]map[string]platformmilvus.QueryResult{
+							testDB: {"rw_probe": {ResultCount: 100}},
+						},
+					},
+				},
+				Now: func() time.Time {
+					return time.Unix(1700000000, 0)
+				},
+			},
 			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner:  cli.DefaultValidateRunner{Loader: config.YAMLLoader{}, Validator: config.ConfigValidator{}, DefaultApplier: config.DefaultValueApplier{}},
@@ -132,7 +150,7 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "RW Probe: status=pass enabled=true insert_rows=100 vector_dim=128 cleanup_enabled=true cleanup_executed=true message=rw probe completed successfully", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}

@@ -63,11 +63,7 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				MinSuccessTargets: cfg.Probe.Read.MinSuccessTargets,
 				Message:           "not configured",
 			},
-			RWProbe: model.RWProbeResult{
-				Status:  model.CheckStatusSkip,
-				Enabled: cfg.Probe.RW.Enabled,
-				Message: "rw probe not implemented in this iteration",
-			},
+			RWProbe: defaultRWProbeResult(cfg),
 		},
 		StartedAt: startedAt,
 	}
@@ -236,6 +232,22 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 	input.Snapshot.Cluster.MQType = resolveMQType(input.Snapshot.Cluster.MQType, cfg, input.Inventory.K8s)
 	input.EndedAt = time.Now()
 	return r.Analyzer.Analyze(ctx, input)
+}
+
+func defaultRWProbeResult(cfg *model.Config) model.RWProbeResult {
+	result := model.RWProbeResult{
+		Status:         model.CheckStatusSkip,
+		CleanupEnabled: cfg.Probe.RW.Cleanup,
+		InsertRows:     cfg.Probe.RW.InsertRows,
+		VectorDim:      cfg.Probe.RW.VectorDim,
+		Enabled:        cfg.Probe.RW.Enabled,
+	}
+	if cfg.Probe.RW.Enabled {
+		result.Message = "rw probe not executed"
+		return result
+	}
+	result.Message = "rw probe disabled"
+	return result
 }
 
 func resolveMQType(current string, cfg *model.Config, k8sInventory model.K8sInventory) string {
