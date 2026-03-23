@@ -35,7 +35,10 @@
     "rw": {
       "status": "skip",
       "enabled": true,
-      "message": "rw probe not implemented in this iteration"
+      "insert_rows": 100,
+      "vector_dim": 128,
+      "cleanup_enabled": true,
+      "message": "rw probe not executed"
     }
   },
   "failures": [

@@ -330,6 +330,10 @@ func TestAnalyzer_ReturnsWarnWhenWarningsPresent(t *testing.T) {
 
 	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
 		Config: analysisConfig(),
+		Checks: []model.CheckResult{
+			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
+			{Name: "milvus-inventory", Status: model.CheckStatusWarn, Message: "partial inventory"},
+		},
 		Snapshot: model.MetadataSnapshot{
 			Cluster: model.ClusterInfo{
 				Name:          "demo",
@@ -339,10 +343,14 @@ func TestAnalyzer_ReturnsWarnWhenWarningsPresent(t *testing.T) {
 				ArchProfile:   model.ArchProfileV24,
 				MQType:        "unknown",
 			},
-		},
-		Checks: []model.CheckResult{
-			{Name: "milvus-connectivity", Status: model.CheckStatusPass, Message: "Milvus is reachable"},
-			{Name: "milvus-inventory", Status: model.CheckStatusWarn, Message: "partial inventory"},
+			RWProbe: model.RWProbeResult{
+				Status:         model.CheckStatusPass,
+				Enabled:        true,
+				InsertRows:     3,
+				VectorDim:      4,
+				CleanupEnabled: true,
+				Message:        "rw probe completed successfully",
+			},
 		},
 		Warnings:  []string{"partial inventory"},
 		StartedAt: time.Unix(0, 0),
@@ -362,6 +370,59 @@ func TestAnalyzer_ReturnsWarnWhenWarningsPresent(t *testing.T) {
 		if check.Status == model.CheckStatusWarn && strings.Contains(check.Message, "partial") {
 			found = true
 		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_AddsRWProbeFailureEvidence(t *testing.T) {
+	t.Parallel()
+
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: analysisConfig(),
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+				MQType:        "unknown",
+			},
+			RWProbe: model.RWProbeResult{
+				Status:          model.CheckStatusFail,
+				Enabled:         true,
+				InsertRows:      3,
+				VectorDim:       4,
+				CleanupEnabled:  true,
+				CleanupExecuted: true,
+				Message:         "query failed: timeout; cleanup failed: drop test collection: forbidden",
+				StepResults: []model.ProbeStepResult{
+					{Name: "query", Success: false, Error: "timeout"},
+					{Name: "cleanup", Success: false, Error: "drop test collection: forbidden"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result != model.FinalResultFAIL {
+		t.Fatalf("Result = %s, want FAIL", result.Result)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name != "rw-probe" {
+			continue
+		}
+		if check.Status != model.CheckStatusFail {
+			t.Fatalf("rw-probe status = %s, want fail", check.Status)
+		}
+		if len(check.Evidence) != 2 {
+			t.Fatalf("rw-probe evidence = %#v", check.Evidence)
+		}
+		found = true
 	}
 	if !found {
 		t.Fatalf("Checks = %#v", result.Checks)
@@ -459,6 +520,49 @@ func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
+func TestAnalyzer_SkipsRWProbeWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := analysisConfig()
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: cfg,
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+			RWProbe: model.RWProbeResult{
+				Status:          model.CheckStatusSkip,
+				Enabled:         false,
+				CleanupEnabled:  true,
+				CleanupExecuted: false,
+				Message:         "rw probe disabled",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Probes.RW.Status != model.CheckStatusSkip {
+		t.Fatalf("RW = %#v", result.Probes.RW)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "rw-probe" && check.Status == model.CheckStatusSkip && check.Message == "rw probe disabled" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("Failures = %#v, want none", result.Failures)
 	}
 }
 

@@ -15,11 +15,19 @@ type Config struct {
 type Client interface {
 	GetVersion(ctx context.Context) (string, error)
 	ListDatabases(ctx context.Context) ([]string, error)
+	CreateDatabase(ctx context.Context, database string) error
+	DropDatabase(ctx context.Context, database string) error
 	ListCollections(ctx context.Context, database string) ([]string, error)
+	CreateCollection(ctx context.Context, req CreateCollectionRequest) error
+	DropCollection(ctx context.Context, database, collection string) error
+	CreateIndex(ctx context.Context, database, collection string) error
 	GetCollectionID(ctx context.Context, database, collection string) (int64, error)
 	GetCollectionRowCount(ctx context.Context, database, collection string) (int64, error)
 	DescribeCollection(ctx context.Context, database, collection string) (CollectionDescription, error)
 	GetCollectionLoadState(ctx context.Context, database, collection string) (LoadState, error)
+	LoadCollection(ctx context.Context, database, collection string) error
+	Insert(ctx context.Context, req InsertRequest) (InsertResult, error)
+	Flush(ctx context.Context, database, collection string) error
 	Query(ctx context.Context, req QueryRequest) (QueryResult, error)
 	Search(ctx context.Context, req SearchRequest) (SearchResult, error)
 	GetMetrics(ctx context.Context, metricType string) (string, error)
@@ -73,6 +81,24 @@ type SearchRequest struct {
 
 type SearchResult struct {
 	ResultCount int
+}
+
+type CreateCollectionRequest struct {
+	Database   string
+	Collection string
+	VectorDim  int
+}
+
+type InsertRequest struct {
+	Database   string
+	Collection string
+	IDs        []int64
+	Payloads   []string
+	Vectors    [][]float32
+}
+
+type InsertResult struct {
+	InsertCount int64
 }
 
 type ClientFactory interface {

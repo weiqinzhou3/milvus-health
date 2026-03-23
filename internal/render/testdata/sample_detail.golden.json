@@ -43,9 +43,62 @@
       ]
     },
     "rw": {
-      "status": "skip",
-      "enabled": false,
-      "message": "stub"
+      "status": "pass",
+      "enabled": true,
+      "test_database": "milvus_health_test_1700000000000000000",
+      "test_collection": "rw_probe",
+      "insert_rows": 3,
+      "vector_dim": 4,
+      "cleanup_enabled": true,
+      "cleanup_executed": true,
+      "steps": [
+        {
+          "name": "cleanup-stale-databases",
+          "success": true,
+          "duration_ms": 1
+        },
+        {
+          "name": "create-database",
+          "success": true,
+          "duration_ms": 2
+        },
+        {
+          "name": "create-collection",
+          "success": true,
+          "duration_ms": 3
+        },
+        {
+          "name": "insert",
+          "success": true,
+          "duration_ms": 4
+        },
+        {
+          "name": "flush",
+          "success": true,
+          "duration_ms": 5
+        },
+        {
+          "name": "create-index",
+          "success": true,
+          "duration_ms": 6
+        },
+        {
+          "name": "load-collection",
+          "success": true,
+          "duration_ms": 7
+        },
+        {
+          "name": "query",
+          "success": true,
+          "duration_ms": 8
+        },
+        {
+          "name": "cleanup",
+          "success": true,
+          "duration_ms": 9
+        }
+      ],
+      "message": "rw probe completed successfully"
     }
   },
   "inventory": {

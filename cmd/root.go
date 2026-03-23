@@ -175,7 +175,9 @@ func defaultDependencies() dependencies {
 			ReadProbe: probes.DefaultBusinessReadProbe{
 				Factory: platformmilvus.SDKClientFactory{},
 			},
-			RWProbe:  probes.NoopRWProbe{},
+			RWProbe: probes.DefaultRWProbe{
+				Factory: platformmilvus.SDKClientFactory{},
+			},
 			Analyzer: analyzers.InventoryAnalyzer{},
 		},
 		validateRunner: cli.DefaultValidateRunner{

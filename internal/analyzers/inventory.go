@@ -133,23 +133,14 @@ func (a InventoryAnalyzer) Analyze(ctx context.Context, input model.AnalyzeInput
 }
 
 func appendProbeChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
+	appendBusinessReadProbeChecks(result, input)
+	appendRWProbeChecks(result, input)
+}
+
+func appendBusinessReadProbeChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 	probe := result.Probes.BusinessRead
 	if probe.Status == "" {
-		if result.Probes.RW.Status == "" {
-			result.Probes.RW = model.RWProbeResult{
-				Status:  model.CheckStatusSkip,
-				Enabled: input.Config.Probe.RW.Enabled,
-				Message: "rw probe not implemented in this iteration",
-			}
-		}
 		return
-	}
-	if result.Probes.RW.Status == "" {
-		result.Probes.RW = model.RWProbeResult{
-			Status:  model.CheckStatusSkip,
-			Enabled: input.Config.Probe.RW.Enabled,
-			Message: "rw probe not implemented in this iteration",
-		}
 	}
 
 	check := model.CheckResult{
@@ -178,9 +169,62 @@ func appendProbeChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
 		result.Failures = append(result.Failures, probe.Message)
 	case model.CheckStatusSkip:
 		if input.Config.Rules.RequireProbeForStandby {
-			result.Warnings = append(result.Warnings, "standby confidence downgraded because probes were skipped")
+			result.Warnings = appendUniqueWarning(result.Warnings, "standby confidence downgraded because probes were skipped")
 		}
 	}
+}
+
+func appendRWProbeChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
+	probe := result.Probes.RW
+	if probe.Status == "" {
+		probe = model.RWProbeResult{
+			Status:  model.CheckStatusSkip,
+			Enabled: input.Config.Probe.RW.Enabled,
+			Message: "rw probe disabled",
+		}
+		result.Probes.RW = probe
+	}
+
+	check := model.CheckResult{
+		Category: "probe",
+		Name:     "rw-probe",
+		Status:   probe.Status,
+		Message:  probe.Message,
+		Actual: map[string]any{
+			"enabled":          probe.Enabled,
+			"insert_rows":      probe.InsertRows,
+			"vector_dim":       probe.VectorDim,
+			"cleanup_enabled":  probe.CleanupEnabled,
+			"cleanup_executed": probe.CleanupExecuted,
+		},
+	}
+	for _, step := range probe.StepResults {
+		if step.Success || strings.TrimSpace(step.Error) == "" {
+			continue
+		}
+		check.Evidence = append(check.Evidence, fmt.Sprintf("%s: %s", step.Name, step.Error))
+	}
+	result.Checks = append(result.Checks, check)
+
+	switch probe.Status {
+	case model.CheckStatusWarn:
+		result.Warnings = append(result.Warnings, probe.Message)
+	case model.CheckStatusFail:
+		result.Failures = append(result.Failures, probe.Message)
+	case model.CheckStatusSkip:
+		if input.Config.Rules.RequireProbeForStandby {
+			result.Warnings = appendUniqueWarning(result.Warnings, "standby confidence downgraded because probes were skipped")
+		}
+	}
+}
+
+func appendUniqueWarning(warnings []string, warning string) []string {
+	for _, item := range warnings {
+		if item == warning {
+			return warnings
+		}
+	}
+	return append(warnings, warning)
 }
 
 func appendK8sChecks(result *model.AnalysisResult, input model.AnalyzeInput) {
