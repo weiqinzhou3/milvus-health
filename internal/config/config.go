@@ -135,6 +135,10 @@ func (DefaultValueApplier) Apply(cfg *model.Config) {
 	if cfg.Output.Format == "" {
 		cfg.Output.Format = model.OutputFormatText
 	}
+	if !cfg.Probe.Read.HasExplicitEnabled() {
+		enabled := true
+		cfg.Probe.Read.Enabled = &enabled
+	}
 	if cfg.Probe.Read.MinSuccessTargets == 0 && !cfg.Probe.Read.HasExplicitMinSuccessTargets() {
 		cfg.Probe.Read.MinSuccessTargets = 1
 	}

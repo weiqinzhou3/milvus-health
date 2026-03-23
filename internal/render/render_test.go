@@ -40,6 +40,8 @@ func sampleResult() *model.AnalysisResult {
 		},
 		Probes: model.ProbeOutputView{
 			BusinessRead: model.BusinessReadProbeResult{
+				Enabled:           true,
+				Executed:          true,
 				Status:            model.CheckStatusPass,
 				ConfiguredTargets: 1,
 				SuccessfulTargets: 1,
@@ -384,6 +386,67 @@ func TestRenderers_RWProbeSkipSummaryIsConsistent(t *testing.T) {
 	}
 	if strings.Contains(string(jsonOut), "\"steps\"") || strings.Contains(string(jsonOut), "\"test_database\"") || strings.Contains(string(jsonOut), "\"test_collection\"") {
 		t.Fatalf("detail=false should keep only rw summary fields: %s", jsonOut)
+	}
+}
+
+func TestRenderers_BusinessReadDisabledOutputIsConsistent(t *testing.T) {
+	t.Parallel()
+
+	result := sampleResult()
+	result.Result = model.FinalResultPASS
+	result.Confidence = model.ConfidenceLow
+	result.Probes.BusinessRead = model.BusinessReadProbeResult{
+		Enabled:           false,
+		Executed:          false,
+		Status:            model.CheckStatusSkip,
+		MinSuccessTargets: 1,
+		Message:           "disabled by config",
+	}
+	result.Checks = []model.CheckResult{
+		{Name: "business-read-probe", Status: model.CheckStatusSkip, Message: "disabled by config"},
+	}
+
+	textOut, err := (render.TextRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("text Render() error = %v", err)
+	}
+	if !strings.Contains(string(textOut), "business-read-probe [skip]: disabled by config") {
+		t.Fatalf("text output should include business-read-probe disabled check: %s", textOut)
+	}
+
+	jsonOut, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: true})
+	if err != nil {
+		t.Fatalf("json Render() error = %v", err)
+	}
+
+	var decoded struct {
+		Probes struct {
+			BusinessRead struct {
+				Enabled  bool              `json:"enabled"`
+				Executed bool              `json:"executed"`
+				Status   model.CheckStatus `json:"status"`
+				Message  string            `json:"message"`
+			} `json:"business_read"`
+		} `json:"probes"`
+		Checks []model.CheckResult `json:"checks"`
+	}
+	if err := json.Unmarshal(jsonOut, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.Probes.BusinessRead.Status != model.CheckStatusSkip {
+		t.Fatalf("business read status = %s, want skip", decoded.Probes.BusinessRead.Status)
+	}
+	if decoded.Probes.BusinessRead.Enabled {
+		t.Fatalf("business read enabled = %t, want false", decoded.Probes.BusinessRead.Enabled)
+	}
+	if decoded.Probes.BusinessRead.Executed {
+		t.Fatalf("business read executed = %t, want false", decoded.Probes.BusinessRead.Executed)
+	}
+	if decoded.Probes.BusinessRead.Message != "disabled by config" {
+		t.Fatalf("business read message = %q, want %q", decoded.Probes.BusinessRead.Message, "disabled by config")
+	}
+	if len(decoded.Checks) != 1 || decoded.Checks[0].Name != "business-read-probe" || decoded.Checks[0].Status != model.CheckStatusSkip {
+		t.Fatalf("checks = %#v", decoded.Checks)
 	}
 }
 

@@ -523,6 +523,53 @@ func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
 	}
 }
 
+func TestAnalyzer_ReadProbeDisabledKeepsSkipCheckAndLowersConfidence(t *testing.T) {
+	t.Parallel()
+
+	cfg := analysisConfig()
+	result, err := (analyzers.InventoryAnalyzer{}).Analyze(context.Background(), model.AnalyzeInput{
+		Config: cfg,
+		Snapshot: model.MetadataSnapshot{
+			Cluster: model.ClusterInfo{
+				Name:          "demo",
+				MilvusURI:     "127.0.0.1:19530",
+				Namespace:     "milvus",
+				MilvusVersion: "2.6.1",
+				ArchProfile:   model.ArchProfileV26,
+			},
+			BusinessReadProbe: model.BusinessReadProbeResult{
+				Enabled:           false,
+				Executed:          false,
+				Status:            model.CheckStatusSkip,
+				Message:           "disabled by config",
+				Check:             &model.CheckResult{Name: "business-read-probe", Category: "probe", Status: model.CheckStatusSkip, Message: "disabled by config"},
+				MinSuccessTargets: 1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Analyze() error = %v", err)
+	}
+	if result.Result == model.FinalResultFAIL {
+		t.Fatalf("Result = %s, want not FAIL", result.Result)
+	}
+	if result.Confidence != model.ConfidenceLow {
+		t.Fatalf("Confidence = %s, want low", result.Confidence)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("Failures = %#v, want none", result.Failures)
+	}
+	found := false
+	for _, check := range result.Checks {
+		if check.Name == "business-read-probe" && check.Status == model.CheckStatusSkip && check.Message == "disabled by config" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Checks = %#v", result.Checks)
+	}
+}
+
 func TestAnalyzer_SkipsRWProbeWhenDisabled(t *testing.T) {
 	t.Parallel()
 

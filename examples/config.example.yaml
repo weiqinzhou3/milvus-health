@@ -12,6 +12,7 @@ k8s:
 
 probe:
   read:
+    enabled: true
     min_success_targets: 1
     targets:
       - database: default

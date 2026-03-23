@@ -27,6 +27,50 @@ func TestBusinessReadProbe_Run_SkipsWhenNoTargets(t *testing.T) {
 	if result.Status != model.CheckStatusSkip || result.Message != "not configured" {
 		t.Fatalf("result = %#v", result)
 	}
+	if !result.Enabled || result.Executed {
+		t.Fatalf("enabled/executed = %#v, want enabled=true executed=false", result)
+	}
+}
+
+func TestBusinessReadProbe_Run_SkipsWhenDisabledByConfig(t *testing.T) {
+	t.Parallel()
+
+	probe := probes.DefaultBusinessReadProbe{}
+	cfg := &model.Config{
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				Enabled: boolPtr(false),
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+					QueryExpr:  "id >= 0",
+				}},
+			},
+		},
+	}
+
+	result, err := probe.Run(context.Background(), cfg, probes.ProbeScope{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusSkip {
+		t.Fatalf("Status = %s, want skip", result.Status)
+	}
+	if result.Message != "disabled by config" {
+		t.Fatalf("Message = %q, want %q", result.Message, "disabled by config")
+	}
+	if result.Enabled {
+		t.Fatalf("Enabled = %t, want false", result.Enabled)
+	}
+	if result.Executed {
+		t.Fatalf("Executed = %t, want false", result.Executed)
+	}
+	if result.Check == nil {
+		t.Fatal("Check = nil, want disabled business-read-probe check")
+	}
+	if result.Check.Name != "business-read-probe" || result.Check.Status != model.CheckStatusSkip || result.Check.Message != "disabled by config" {
+		t.Fatalf("Check = %#v", result.Check)
+	}
 }
 
 func TestBusinessReadProbe_Run_QuerySuccess(t *testing.T) {
@@ -73,6 +117,9 @@ func TestBusinessReadProbe_Run_QuerySuccess(t *testing.T) {
 	}
 	if result.Status != model.CheckStatusPass {
 		t.Fatalf("Status = %s, want pass", result.Status)
+	}
+	if !result.Enabled || !result.Executed {
+		t.Fatalf("enabled/executed = %#v, want enabled=true executed=true", result)
 	}
 	if result.SuccessfulTargets != 1 || len(result.Targets) != 1 {
 		t.Fatalf("result = %#v", result)
@@ -235,4 +282,8 @@ func TestBusinessReadProbe_Run_FailsWhenNoTargetsSucceedEvenIfMinSuccessTargetsZ
 	if result.Message != "no read probe targets succeeded" {
 		t.Fatalf("Message = %q, want %q", result.Message, "no read probe targets succeeded")
 	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

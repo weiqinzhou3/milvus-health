@@ -58,12 +58,8 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				ArchProfile: model.ArchProfileUnknown,
 				MQType:      "unknown",
 			},
-			BusinessReadProbe: model.BusinessReadProbeResult{
-				Status:            model.CheckStatusSkip,
-				MinSuccessTargets: cfg.Probe.Read.MinSuccessTargets,
-				Message:           "not configured",
-			},
-			RWProbe: defaultRWProbeResult(cfg),
+			BusinessReadProbe: defaultBusinessReadProbeResult(cfg),
+			RWProbe:           defaultRWProbeResult(cfg),
 		},
 		StartedAt: startedAt,
 	}
@@ -247,6 +243,37 @@ func defaultRWProbeResult(cfg *model.Config) model.RWProbeResult {
 		return result
 	}
 	result.Message = "rw probe disabled"
+	return result
+}
+
+func defaultBusinessReadProbeResult(cfg *model.Config) model.BusinessReadProbeResult {
+	result := model.BusinessReadProbeResult{
+		Enabled:           cfg != nil && cfg.Probe.Read.IsEnabled(),
+		Executed:          false,
+		Status:            model.CheckStatusSkip,
+		MinSuccessTargets: 1,
+		Message:           "not configured",
+	}
+	if cfg == nil {
+		return result
+	}
+
+	result.MinSuccessTargets = cfg.Probe.Read.MinSuccessTargets
+	if result.Enabled {
+		return result
+	}
+
+	result.Message = "disabled by config"
+	result.Check = &model.CheckResult{
+		Category: "probe",
+		Name:     "business-read-probe",
+		Status:   model.CheckStatusSkip,
+		Message:  "disabled by config",
+		Actual: map[string]any{
+			"enabled":  false,
+			"executed": false,
+		},
+	}
 	return result
 }
 

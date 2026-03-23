@@ -26,6 +26,8 @@
   },
   "probes": {
     "business_read": {
+      "enabled": true,
+      "executed": true,
       "status": "pass",
       "configured_targets": 1,
       "successful_targets": 1,

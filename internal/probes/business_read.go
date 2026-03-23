@@ -17,6 +17,8 @@ type DefaultBusinessReadProbe struct {
 
 func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, scope ProbeScope) (model.BusinessReadProbeResult, error) {
 	result := model.BusinessReadProbeResult{
+		Enabled:           true,
+		Executed:          false,
 		Status:            model.CheckStatusSkip,
 		MinSuccessTargets: 1,
 		Message:           "not configured",
@@ -25,16 +27,25 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 		return result, &model.AppError{Code: model.ErrCodeProbeRead, Message: "config is nil"}
 	}
 
+	result.Enabled = cfg.Probe.Read.IsEnabled()
 	result.MinSuccessTargets = cfg.Probe.Read.MinSuccessTargets
+	if !result.Enabled {
+		result.Message = "disabled by config"
+		result.Check = &model.CheckResult{
+			Category: "probe",
+			Name:     "business-read-probe",
+			Status:   model.CheckStatusSkip,
+			Message:  "disabled by config",
+			Actual: map[string]any{
+				"enabled":  false,
+				"executed": false,
+			},
+		}
+		return result, nil
+	}
 	if len(cfg.Probe.Read.Targets) == 0 {
 		return result, nil
 	}
-
-	client, err := p.newClient(ctx, cfg)
-	if err != nil {
-		return result, &model.AppError{Code: model.ErrCodeProbeRead, Message: fmt.Sprintf("create milvus client: %v", err), Cause: err}
-	}
-	defer client.Close(ctx)
 
 	filteredTargets := make([]model.ReadProbeTarget, 0, len(cfg.Probe.Read.Targets))
 	for _, target := range cfg.Probe.Read.Targets {
@@ -48,6 +59,13 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 		return result, nil
 	}
 
+	client, err := p.newClient(ctx, cfg)
+	if err != nil {
+		return result, &model.AppError{Code: model.ErrCodeProbeRead, Message: fmt.Sprintf("create milvus client: %v", err), Cause: err}
+	}
+	defer client.Close(ctx)
+
+	result.Executed = true
 	result.ConfiguredTargets = len(filteredTargets)
 	result.Targets = make([]model.BusinessReadTargetResult, 0, len(filteredTargets))
 	for _, target := range filteredTargets {
