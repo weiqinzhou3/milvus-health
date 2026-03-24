@@ -44,6 +44,19 @@ This planned release marks the point where `main` should be described as an earl
 - README quickstart now documents the current build / validate / detail-mode check commands that were re-run during doc sync
 - Bundled output examples now track the current failure-path default output instead of stale pre-sync samples
 - README and project status wording no longer describe the project as skeleton, stub, or “no real SDK/client/inventory/probes”
+- Release preparation now includes GoReleaser packaging for Linux and macOS on `amd64` / `arm64`
+- GitHub Actions now provides a minimal verify path on PR / push and a tag-driven release path that emits archives plus `checksums.txt`
+
+### Release artifacts
+
+- Binary archives:
+  - `milvus-health_<version>_linux_amd64.tar.gz`
+  - `milvus-health_<version>_linux_arm64.tar.gz`
+  - `milvus-health_<version>_darwin_amd64.tar.gz`
+  - `milvus-health_<version>_darwin_arm64.tar.gz`
+- Checksum manifest:
+  - `checksums.txt`
+- Version metadata is injected at build time so `milvus-health version` reports the tagged release instead of a placeholder string
 
 ### Known limitations
 

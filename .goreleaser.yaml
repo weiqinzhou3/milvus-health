@@ -1,0 +1,36 @@
+version: 2
+
+project_name: milvus-health
+
+before:
+  hooks:
+    - go test ./... -count=1
+
+builds:
+  - id: milvus-health
+    main: .
+    binary: milvus-health
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/weiqinzhou3/milvus-health/cmd.Version={{.Version}}
+
+archives:
+  - id: default
+    ids:
+      - milvus-health
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
