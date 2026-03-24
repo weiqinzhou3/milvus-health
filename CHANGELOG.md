@@ -44,6 +44,21 @@ This planned release marks the point where `main` should be described as an earl
 - README quickstart now documents the current build / validate / detail-mode check commands that were re-run during doc sync
 - Bundled output examples now track the current failure-path default output instead of stale pre-sync samples
 - README and project status wording no longer describe the project as skeleton, stub, or “no real SDK/client/inventory/probes”
+- Release preparation now includes GoReleaser packaging for Linux and macOS on `amd64` / `arm64`
+- GitHub Actions now provides a minimal verify path on PR / push and a tag-driven release path that emits archives plus `checksums.txt`
+
+### Release artifacts
+
+- Binary archives:
+  - `milvus-health_<version>_linux_amd64.tar.gz`
+  - `milvus-health_<version>_linux_arm64.tar.gz`
+  - `milvus-health_<version>_darwin_amd64.tar.gz`
+  - `milvus-health_<version>_darwin_arm64.tar.gz`
+- Checksum manifest:
+  - `checksums.txt`
+- Development builds may report a development value such as `dev`
+- Release builds inject the real version through `ldflags`
+- `milvus-health version` in release artifacts reports the injected release version
 
 ### Known limitations
 
@@ -54,4 +69,3 @@ This planned release marks the point where `main` should be described as an earl
 - Business Read Probe only enters the search branch when `anns_field` is configured
 - Kubernetes resource usage depends on metrics-server availability and permissions
 - `binlog_size_bytes` parsing is validated for the currently supported payload shapes, not all historical variants
-- The `version` subcommand still carries a placeholder version string and should be updated during release cut

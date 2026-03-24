@@ -20,7 +20,7 @@ import (
 	"github.com/weiqinzhou3/milvus-health/internal/render"
 )
 
-const Version = "0.1.0-skeleton"
+var Version = "dev"
 
 type dependencies struct {
 	checkRunner     cli.CheckRunner
