@@ -56,7 +56,9 @@ This planned release marks the point where `main` should be described as an earl
   - `milvus-health_<version>_darwin_arm64.tar.gz`
 - Checksum manifest:
   - `checksums.txt`
-- Version metadata is injected at build time so `milvus-health version` reports the tagged release instead of a placeholder string
+- Development builds may report a development value such as `dev`
+- Release builds inject the real version through `ldflags`
+- `milvus-health version` in release artifacts reports the injected release version
 
 ### Known limitations
 
@@ -67,4 +69,3 @@ This planned release marks the point where `main` should be described as an earl
 - Business Read Probe only enters the search branch when `anns_field` is configured
 - Kubernetes resource usage depends on metrics-server availability and permissions
 - `binlog_size_bytes` parsing is validated for the currently supported payload shapes, not all historical variants
-- The `version` subcommand still carries a placeholder version string and should be updated during release cut
