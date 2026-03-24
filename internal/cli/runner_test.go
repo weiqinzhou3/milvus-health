@@ -340,6 +340,62 @@ func TestCheckRunner_PassesBusinessReadProbeResultToAnalyzer(t *testing.T) {
 	}
 }
 
+func TestCheckRunner_GetsDisabledBusinessReadResultFromProbe(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	readProbe := &fakeReadProbe{
+		result: model.BusinessReadProbeResult{
+			Enabled:           false,
+			Executed:          false,
+			Status:            model.CheckStatusSkip,
+			MinSuccessTargets: 1,
+			Message:           "disabled by config",
+			Check: &model.CheckResult{
+				Name:     "business-read-probe",
+				Category: "probe",
+				Status:   model.CheckStatusSkip,
+				Message:  "disabled by config",
+			},
+		},
+	}
+	runner := cli.DefaultCheckRunner{
+		Loader: fakeLoader{cfg: &model.Config{
+			Probe: model.ProbeConfig{
+				Read: model.ReadProbeConfig{
+					Enabled:           boolPtr(false),
+					MinSuccessTargets: 1,
+					Targets:           []model.ReadProbeTarget{{Database: "default", Collection: "book"}},
+				},
+			},
+		}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{clusterErr: errors.New("dial failed")},
+		K8sCollector:    fakeK8sCollector{},
+		ReadProbe:       readProbe,
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml", Database: "default", Collection: "book"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if readProbe.calls != 1 {
+		t.Fatalf("ReadProbe.Run() calls = %d, want 1", readProbe.calls)
+	}
+	if analyzer.input.Snapshot.BusinessReadProbe.Message != "disabled by config" {
+		t.Fatalf("BusinessReadProbe = %#v", analyzer.input.Snapshot.BusinessReadProbe)
+	}
+	if analyzer.input.Snapshot.BusinessReadProbe.Check == nil {
+		t.Fatalf("BusinessReadProbe.Check = nil, want disabled check from probe")
+	}
+	if readProbe.scope.Database != "default" || readProbe.scope.Collection != "book" {
+		t.Fatalf("scope = %#v", readProbe.scope)
+	}
+}
+
 func TestCheckRunner_DoesNotRunRWProbeWhenDisabled(t *testing.T) {
 	t.Parallel()
 
@@ -613,5 +669,9 @@ func TestValidateRunner_ReturnsAppError_ForInvalidConfig(t *testing.T) {
 }
 
 func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func boolPtr(v bool) *bool {
 	return &v
 }

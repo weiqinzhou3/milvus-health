@@ -485,7 +485,7 @@ func TestAnalyzer_WarnsWhenCollectionRowCountIsPartial(t *testing.T) {
 	}
 }
 
-func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
+func TestAnalyzer_DoesNotBackfillBusinessReadProbeCheckWhenMissing(t *testing.T) {
 	t.Parallel()
 
 	cfg := analysisConfig()
@@ -500,9 +500,11 @@ func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
 				ArchProfile:   model.ArchProfileV26,
 			},
 			BusinessReadProbe: model.BusinessReadProbeResult{
+				Enabled:           false,
+				Executed:          false,
 				Status:            model.CheckStatusSkip,
 				MinSuccessTargets: 1,
-				Message:           "not configured",
+				Message:           "disabled by config",
 			},
 		},
 	})
@@ -514,12 +516,12 @@ func TestAnalyzer_SkipsBusinessReadProbeWhenNotConfigured(t *testing.T) {
 	}
 	found := false
 	for _, check := range result.Checks {
-		if check.Name == "business-read-probe" && check.Status == model.CheckStatusSkip {
+		if check.Name == "business-read-probe" {
 			found = true
 		}
 	}
-	if !found {
-		t.Fatalf("Checks = %#v", result.Checks)
+	if found {
+		t.Fatalf("Checks = %#v, want analyzer not to backfill business-read-probe", result.Checks)
 	}
 }
 
@@ -639,6 +641,13 @@ func TestAnalyzer_FailsWhenBusinessReadProbeFailsAndKeepsEvidence(t *testing.T) 
 					Success:    false,
 					Error:      "query failed: timeout",
 				}},
+				Check: &model.CheckResult{
+					Name:     "business-read-probe",
+					Category: "probe",
+					Status:   model.CheckStatusFail,
+					Message:  "no read probe targets succeeded",
+					Evidence: []string{"default.book: query failed: timeout"},
+				},
 			},
 		},
 	})

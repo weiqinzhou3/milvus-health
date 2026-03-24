@@ -30,6 +30,9 @@ func TestBusinessReadProbe_Run_SkipsWhenNoTargets(t *testing.T) {
 	if !result.Enabled || result.Executed {
 		t.Fatalf("enabled/executed = %#v, want enabled=true executed=false", result)
 	}
+	if result.Check == nil || result.Check.Name != "business-read-probe" || result.Check.Status != model.CheckStatusSkip {
+		t.Fatalf("Check = %#v", result.Check)
+	}
 }
 
 func TestBusinessReadProbe_Run_SkipsWhenDisabledByConfig(t *testing.T) {
@@ -126,6 +129,9 @@ func TestBusinessReadProbe_Run_QuerySuccess(t *testing.T) {
 	}
 	if result.Targets[0].Action != model.ProbeActionQuery || !result.Targets[0].Success {
 		t.Fatalf("target = %#v", result.Targets[0])
+	}
+	if result.Check == nil || result.Check.Name != "business-read-probe" || result.Check.Status != model.CheckStatusPass {
+		t.Fatalf("Check = %#v", result.Check)
 	}
 	if client.LastQueryRequest.Expr != "id >= 0" || client.LastQueryRequest.Limit != 1 {
 		t.Fatalf("LastQueryRequest = %#v", client.LastQueryRequest)

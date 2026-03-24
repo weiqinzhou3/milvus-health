@@ -31,19 +31,11 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 	result.MinSuccessTargets = cfg.Probe.Read.MinSuccessTargets
 	if !result.Enabled {
 		result.Message = "disabled by config"
-		result.Check = &model.CheckResult{
-			Category: "probe",
-			Name:     "business-read-probe",
-			Status:   model.CheckStatusSkip,
-			Message:  "disabled by config",
-			Actual: map[string]any{
-				"enabled":  false,
-				"executed": false,
-			},
-		}
+		result.Check = buildBusinessReadProbeCheck(result)
 		return result, nil
 	}
 	if len(cfg.Probe.Read.Targets) == 0 {
+		result.Check = buildBusinessReadProbeCheck(result)
 		return result, nil
 	}
 
@@ -56,6 +48,7 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 	}
 	if len(filteredTargets) == 0 {
 		result.Message = "all targets filtered out"
+		result.Check = buildBusinessReadProbeCheck(result)
 		return result, nil
 	}
 
@@ -87,7 +80,31 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 		result.Status = model.CheckStatusWarn
 		result.Message = fmt.Sprintf("%d/%d read probe targets succeeded, below min_success_targets=%d", result.SuccessfulTargets, result.ConfiguredTargets, result.MinSuccessTargets)
 	}
+	result.Check = buildBusinessReadProbeCheck(result)
 	return result, nil
+}
+
+func buildBusinessReadProbeCheck(result model.BusinessReadProbeResult) *model.CheckResult {
+	check := &model.CheckResult{
+		Category: "probe",
+		Name:     "business-read-probe",
+		Status:   result.Status,
+		Message:  result.Message,
+		Actual: map[string]any{
+			"enabled":            result.Enabled,
+			"executed":           result.Executed,
+			"configured_targets": result.ConfiguredTargets,
+			"successful_targets": result.SuccessfulTargets,
+		},
+		Expected: result.MinSuccessTargets,
+	}
+	for _, target := range result.Targets {
+		if target.Success || strings.TrimSpace(target.Error) == "" {
+			continue
+		}
+		check.Evidence = append(check.Evidence, fmt.Sprintf("%s.%s: %s", target.Database, target.Collection, target.Error))
+	}
+	return check
 }
 
 func (p DefaultBusinessReadProbe) runTarget(ctx context.Context, client platformmilvus.Client, target model.ReadProbeTarget) model.BusinessReadTargetResult {

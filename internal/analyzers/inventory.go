@@ -143,31 +143,8 @@ func appendBusinessReadProbeChecks(result *model.AnalysisResult, input model.Ana
 		return
 	}
 
-	if !hasCheckNamed(result.Checks, "business-read-probe") {
-		check := probe.Check
-		if check == nil {
-			generated := model.CheckResult{
-				Category: "probe",
-				Name:     "business-read-probe",
-				Status:   probe.Status,
-				Message:  probe.Message,
-				Actual: map[string]any{
-					"enabled":            probe.Enabled,
-					"executed":           probe.Executed,
-					"configured_targets": probe.ConfiguredTargets,
-					"successful_targets": probe.SuccessfulTargets,
-				},
-				Expected: probe.MinSuccessTargets,
-			}
-			for _, target := range probe.Targets {
-				if target.Success || strings.TrimSpace(target.Error) == "" {
-					continue
-				}
-				generated.Evidence = append(generated.Evidence, fmt.Sprintf("%s.%s: %s", target.Database, target.Collection, target.Error))
-			}
-			check = &generated
-		}
-		result.Checks = append(result.Checks, *check)
+	if probe.Check != nil && !hasCheckNamed(result.Checks, "business-read-probe") {
+		result.Checks = append(result.Checks, *probe.Check)
 	}
 
 	switch probe.Status {

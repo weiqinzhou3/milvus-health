@@ -58,10 +58,25 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				ArchProfile: model.ArchProfileUnknown,
 				MQType:      "unknown",
 			},
-			BusinessReadProbe: defaultBusinessReadProbeResult(cfg),
-			RWProbe:           defaultRWProbeResult(cfg),
+			BusinessReadProbe: model.BusinessReadProbeResult{
+				Enabled:           cfg.Probe.Read.IsEnabled(),
+				Executed:          false,
+				MinSuccessTargets: cfg.Probe.Read.MinSuccessTargets,
+			},
+			RWProbe: defaultRWProbeResult(cfg),
 		},
 		StartedAt: startedAt,
+	}
+
+	if r.ReadProbe != nil && !cfg.Probe.Read.IsEnabled() {
+		probeResult, probeErr := r.ReadProbe.Run(ctx, cfg, probes.ProbeScope{
+			Database:   opts.Database,
+			Collection: opts.Collection,
+		})
+		input.Snapshot.BusinessReadProbe = probeResult
+		if probeErr != nil {
+			input.Failures = append(input.Failures, probeErr.Error())
+		}
 	}
 
 	if r.MilvusCollector == nil {
@@ -164,7 +179,7 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				})
 			}
 
-			if r.ReadProbe != nil {
+			if r.ReadProbe != nil && cfg.Probe.Read.IsEnabled() {
 				probeResult, probeErr := r.ReadProbe.Run(ctx, cfg, probes.ProbeScope{
 					Database:   opts.Database,
 					Collection: opts.Collection,
@@ -243,37 +258,6 @@ func defaultRWProbeResult(cfg *model.Config) model.RWProbeResult {
 		return result
 	}
 	result.Message = "rw probe disabled"
-	return result
-}
-
-func defaultBusinessReadProbeResult(cfg *model.Config) model.BusinessReadProbeResult {
-	result := model.BusinessReadProbeResult{
-		Enabled:           cfg != nil && cfg.Probe.Read.IsEnabled(),
-		Executed:          false,
-		Status:            model.CheckStatusSkip,
-		MinSuccessTargets: 1,
-		Message:           "not configured",
-	}
-	if cfg == nil {
-		return result
-	}
-
-	result.MinSuccessTargets = cfg.Probe.Read.MinSuccessTargets
-	if result.Enabled {
-		return result
-	}
-
-	result.Message = "disabled by config"
-	result.Check = &model.CheckResult{
-		Category: "probe",
-		Name:     "business-read-probe",
-		Status:   model.CheckStatusSkip,
-		Message:  "disabled by config",
-		Actual: map[string]any{
-			"enabled":  false,
-			"executed": false,
-		},
-	}
 	return result
 }
 
