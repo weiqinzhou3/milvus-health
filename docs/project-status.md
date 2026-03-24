@@ -1,6 +1,6 @@
 # milvus-health Project Status
 
-Last updated: 2026-03-23
+Last updated: 2026-03-24
 
 ## 1. Current conclusion
 
@@ -20,6 +20,7 @@ Last updated: 2026-03-23
 | P0 | Completed and merged | 真实 Milvus/K8s 基础采集、配置加载校验、渲染、退出码链路已闭环 |
 | P1 | Completed and merged | Business Read Probe 已接入真实 Milvus 路径 |
 | P2 | Completed and merged | RW Probe 最小写读闭环已接入真实 Milvus 路径 |
+| Read probe disable toggle | Completed and merged | `probe.read.enabled=false` 会返回 `business-read-probe=skip`、`message=disabled by config`，并将 `confidence` 降为 `low` |
 
 这里的 “P0 / P1 / P2 completed” 指当前仓库定义的这三轮交付范围已经完成并合并到 `main`，不等于长期 roadmap 上所有后续增强项都已完成。
 
@@ -66,6 +67,12 @@ Last updated: 2026-03-23
   - `load state` best effort
   - `query`
   - `optional search`
+- `probe.read.enabled=false` 已按设计合入：
+  - 不执行任何 Business Read Probe 动作
+  - 保留 `business-read-probe` 检查项
+  - 结果为 `skip`
+  - `message = "disabled by config"`
+  - `confidence = low`
 - RW Probe 已接入真实路径：
   - cleanup stale prefixed databases
   - create database
@@ -129,5 +136,6 @@ Last updated: 2026-03-23
 本文件、[README.md](../README.md)、[CHANGELOG.md](../CHANGELOG.md)、[examples/output.text.example.txt](../examples/output.text.example.txt)、[examples/output.json.example.json](../examples/output.json.example.json) 应保持同步，统一反映：
 
 - `main` 已完成 P0 / P1 / P2
+- `probe.read.enabled=false` 的 disable toggle 已 merged
 - 仓库已具备真实巡检能力
 - 当前阶段是“早期可交付版本”，而不是 skeleton/stub

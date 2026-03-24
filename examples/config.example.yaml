@@ -18,6 +18,7 @@ probe:
       - database: default
         collection: book
         query_expr: "id >= 0"
+        topk: 3
         output_fields:
           - id
           - title
@@ -31,5 +32,8 @@ probe:
 output:
   format: text
   detail: false
+
+rules:
+  resource_warn_ratio: 0.85
 
 timeout_sec: 1
