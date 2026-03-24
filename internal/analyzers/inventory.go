@@ -143,24 +143,9 @@ func appendBusinessReadProbeChecks(result *model.AnalysisResult, input model.Ana
 		return
 	}
 
-	check := model.CheckResult{
-		Category: "probe",
-		Name:     "business-read-probe",
-		Status:   probe.Status,
-		Message:  probe.Message,
-		Actual: map[string]int{
-			"configured_targets": probe.ConfiguredTargets,
-			"successful_targets": probe.SuccessfulTargets,
-		},
-		Expected: probe.MinSuccessTargets,
+	if probe.Check != nil && !hasCheckNamed(result.Checks, "business-read-probe") {
+		result.Checks = append(result.Checks, *probe.Check)
 	}
-	for _, target := range probe.Targets {
-		if target.Success || strings.TrimSpace(target.Error) == "" {
-			continue
-		}
-		check.Evidence = append(check.Evidence, fmt.Sprintf("%s.%s: %s", target.Database, target.Collection, target.Error))
-	}
-	result.Checks = append(result.Checks, check)
 
 	switch probe.Status {
 	case model.CheckStatusWarn:
@@ -172,6 +157,15 @@ func appendBusinessReadProbeChecks(result *model.AnalysisResult, input model.Ana
 			result.Warnings = appendUniqueWarning(result.Warnings, "standby confidence downgraded because probes were skipped")
 		}
 	}
+}
+
+func hasCheckNamed(checks []model.CheckResult, name string) bool {
+	for _, check := range checks {
+		if check.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func appendRWProbeChecks(result *model.AnalysisResult, input model.AnalyzeInput) {

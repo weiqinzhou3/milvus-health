@@ -232,6 +232,18 @@ func TestConfigValidator_Validate_Success_WhenMinSuccessTargetsIsZero(t *testing
 	}
 }
 
+func TestConfigValidator_Validate_Success_WhenReadProbeDisabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Probe.Read.Enabled = boolPtr(false)
+	cfg.Probe.Read.Targets = nil
+
+	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestConfigValidator_Validate_Success_WhenQueryExprEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -385,6 +397,12 @@ func TestDefaultValueApplier_Apply(t *testing.T) {
 	if cfg.Probe.Read.MinSuccessTargets != 1 {
 		t.Fatalf("Probe.Read.MinSuccessTargets = %d, want 1", cfg.Probe.Read.MinSuccessTargets)
 	}
+	if cfg.Probe.Read.Enabled == nil {
+		t.Fatal("Probe.Read.Enabled = nil, want true")
+	}
+	if !*cfg.Probe.Read.Enabled {
+		t.Fatalf("Probe.Read.Enabled = %t, want true", *cfg.Probe.Read.Enabled)
+	}
 }
 
 func TestDefaultValueApplier_AppliesExpectedDefaults(t *testing.T) {
@@ -477,4 +495,8 @@ func assertHasFieldError(t *testing.T, err error, field string) {
 		}
 	}
 	t.Fatalf("field error %q not found in %+v", field, cfgErr.Fields)
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

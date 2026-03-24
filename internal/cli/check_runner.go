@@ -59,13 +59,24 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				MQType:      "unknown",
 			},
 			BusinessReadProbe: model.BusinessReadProbeResult{
-				Status:            model.CheckStatusSkip,
+				Enabled:           cfg.Probe.Read.IsEnabled(),
+				Executed:          false,
 				MinSuccessTargets: cfg.Probe.Read.MinSuccessTargets,
-				Message:           "not configured",
 			},
 			RWProbe: defaultRWProbeResult(cfg),
 		},
 		StartedAt: startedAt,
+	}
+
+	if r.ReadProbe != nil && !cfg.Probe.Read.IsEnabled() {
+		probeResult, probeErr := r.ReadProbe.Run(ctx, cfg, probes.ProbeScope{
+			Database:   opts.Database,
+			Collection: opts.Collection,
+		})
+		input.Snapshot.BusinessReadProbe = probeResult
+		if probeErr != nil {
+			input.Failures = append(input.Failures, probeErr.Error())
+		}
 	}
 
 	if r.MilvusCollector == nil {
@@ -168,7 +179,7 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				})
 			}
 
-			if r.ReadProbe != nil {
+			if r.ReadProbe != nil && cfg.Probe.Read.IsEnabled() {
 				probeResult, probeErr := r.ReadProbe.Run(ctx, cfg, probes.ProbeScope{
 					Database:   opts.Database,
 					Collection: opts.Collection,

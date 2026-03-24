@@ -203,6 +203,7 @@ type ProbeConfig struct {
 }
 
 type ReadProbeConfig struct {
+	Enabled              *bool             `yaml:"enabled"`
 	MinSuccessTargets    int               `yaml:"min_success_targets"`
 	Targets              []ReadProbeTarget `yaml:"targets"`
 	minSuccessTargetsSet bool              `yaml:"-"`
@@ -210,6 +211,7 @@ type ReadProbeConfig struct {
 
 func (c *ReadProbeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type rawReadProbeConfig struct {
+		Enabled           *bool             `yaml:"enabled"`
 		MinSuccessTargets *int              `yaml:"min_success_targets"`
 		Targets           []ReadProbeTarget `yaml:"targets"`
 	}
@@ -219,6 +221,7 @@ func (c *ReadProbeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	c.Enabled = raw.Enabled
 	c.Targets = raw.Targets
 	c.minSuccessTargetsSet = raw.MinSuccessTargets != nil
 	if raw.MinSuccessTargets != nil {
@@ -231,6 +234,14 @@ func (c *ReadProbeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 func (c ReadProbeConfig) HasExplicitMinSuccessTargets() bool {
 	return c.minSuccessTargetsSet
+}
+
+func (c ReadProbeConfig) HasExplicitEnabled() bool {
+	return c.Enabled != nil
+}
+
+func (c ReadProbeConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 type ReadProbeTarget struct {
@@ -383,12 +394,15 @@ type EndpointInventory struct {
 }
 
 type BusinessReadProbeResult struct {
+	Enabled           bool                       `json:"enabled"`
+	Executed          bool                       `json:"executed"`
 	Status            CheckStatus                `json:"status"`
 	ConfiguredTargets int                        `json:"configured_targets"`
 	SuccessfulTargets int                        `json:"successful_targets"`
 	MinSuccessTargets int                        `json:"min_success_targets"`
 	Message           string                     `json:"message"`
 	Targets           []BusinessReadTargetResult `json:"targets,omitempty"`
+	Check             *CheckResult               `json:"-"`
 }
 
 type BusinessReadTargetResult struct {

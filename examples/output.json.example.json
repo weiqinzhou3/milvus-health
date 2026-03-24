@@ -26,11 +26,13 @@
   },
   "probes": {
     "business_read": {
-      "status": "skip",
+      "enabled": true,
+      "executed": false,
+      "status": "",
       "configured_targets": 0,
       "successful_targets": 0,
       "min_success_targets": 1,
-      "message": "not configured"
+      "message": ""
     },
     "rw": {
       "status": "skip",

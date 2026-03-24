@@ -210,6 +210,8 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	}
 
 	type businessReadSummary struct {
+		Enabled           bool              `json:"enabled"`
+		Executed          bool              `json:"executed"`
 		Status            model.CheckStatus `json:"status"`
 		ConfiguredTargets int               `json:"configured_targets"`
 		SuccessfulTargets int               `json:"successful_targets"`
@@ -240,6 +242,8 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		Summary:    result.Summary,
 		Probes: probeOutputSummary{
 			BusinessRead: businessReadSummary{
+				Enabled:           result.Probes.BusinessRead.Enabled,
+				Executed:          result.Probes.BusinessRead.Executed,
 				Status:            result.Probes.BusinessRead.Status,
 				ConfiguredTargets: result.Probes.BusinessRead.ConfiguredTargets,
 				SuccessfulTargets: result.Probes.BusinessRead.SuccessfulTargets,

@@ -69,6 +69,7 @@ output:
 当前默认值：
 
 - `output.format = text`
+- `probe.read.enabled = true`
 - `probe.read.min_success_targets = 1`
 - `probe.read.targets[*].query_expr = "id >= 0"`
 - `probe.read.targets[*].topk = 3`
