@@ -1,39 +1,112 @@
+# milvus-health full config example
+# 说明：
+# 1. 这份示例按当前 main 分支“实际支持的配置字段”补齐。
+# 2. 未被当前代码支持的键（例如 k8s.resource_usage.source）不要写进来，
+#    否则当前版本会静默忽略，造成“看起来配了但实际不生效”的误解。
+
 cluster:
+  # 集群展示名称，会出现在输出头部
   name: milvus-prod-sh
+
   milvus:
+    # Milvus 地址，必须是 host:port，不能带 http:// 或 https://
     uri: 127.0.0.1:19530
+
+    # 用户名。若你的环境不用用户名密码，可保留为空
     username: root
+
+    # 密码。若使用 token 认证，可留空
     password: ""
+
+    # Token 认证。若使用 username/password，可留空
     token: ""
 
 k8s:
+  # Milvus 所在命名空间
   namespace: milvus
+
+  # kubeconfig 文件路径
+  # 若在集群内运行，后续可以考虑走 in-cluster config；当前示例仍写显式路径
   kubeconfig: examples/milvus-health-missing-kubeconfig
+
+dependencies:
+  mq:
+    # 消息队列类型。当前代码模型已支持该字段，建议显式写出。
+    # 常见值：pulsar / kafka / rocksmq / woodpecker
+    type: pulsar
 
 probe:
   read:
+    # 是否启用 Business Read Probe
+    # true：执行只读探测
+    # false：跳过该探测，并输出 business-read-probe [skip]: disabled by config
     enabled: true
+
+    # 至少需要成功的 target 数量
+    # 当前校验要求 >= 1
     min_success_targets: 1
+
+    # 只读探测目标列表
     targets:
-      - database: default
+      - # 目标数据库
+        database: default
+
+        # 目标集合
         collection: book
+
+        # 标量查询表达式（必填）
         query_expr: "id >= 0"
+
+        # 向量检索字段名（可选）
+        # 如果你当前只做 query，不做 ANN，可留空字符串
+        anns_field: ""
+
+        # topk（可选）
+        # 对纯 query 场景影响不大；当前示例保留显式值，避免歧义
         topk: 3
+
+        # 返回字段（可选）
         output_fields:
           - id
           - title
+
   rw:
+    # 是否启用读写探测
+    # true：会创建临时数据库/集合、写入、查询、清理
+    # false：跳过 RW Probe
     enabled: true
+
+    # 临时测试数据库前缀
+    # 当前 RW Probe 启用时该字段必填
     test_database_prefix: milvus_health_test
+
+    # 是否在探测结束后自动清理测试数据库/集合
     cleanup: true
+
+    # 写入测试数据行数
     insert_rows: 100
+
+    # 向量维度
     vector_dim: 128
 
-output:
-  format: text
-  detail: false
-
 rules:
+  # K8s 资源使用率告警阈值
+  # 当前示例显式写出 0.85；表示达到 85% 以上进入 warn 判定
   resource_warn_ratio: 0.85
 
-timeout_sec: 1
+  # 是否要求 probe 参与 standby 判定
+  # 当前代码模型已支持该字段，建议显式写出，避免示例遗漏
+  require_probe_for_standby: true
+
+output:
+  # 输出格式：text 或 json
+  format: text
+
+  # 是否输出详细信息
+  # false：偏概览
+  # true：输出 detail / probes / steps 等更多信息
+  detail: false
+
+# 整体超时时间（秒）
+# 当前代码默认值为 60；示例里建议直接写清楚，不要再写 1 秒这种过紧值
+timeout_sec: 60
