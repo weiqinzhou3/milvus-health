@@ -2,8 +2,6 @@
 
 `milvus-health` 是面向 DBA、SRE 与运维人员的 Milvus 集群健康检查 CLI。它会连接真实 Milvus 与可选的 Kubernetes 集群，输出稳定的 `summary`、`checks`、`detail` 与 `exit code`，支持 `text` / `json` 两种结果格式，适合终端查看、重定向和自动化集成。
 
-当前 `main` 已完成 P0、P1、P2 主线能力，不应再被描述为 skeleton、stub 或“只有静态校验”的仓库。
-
 ## 项目简介
 
 `milvus-health check` 的职责是执行真实巡检并渲染结果：
