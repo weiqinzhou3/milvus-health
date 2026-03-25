@@ -50,7 +50,17 @@ RW Probe 当前走最小可用的真实写读闭环：
 
 ## Quickstart
 
-以下命令已在当前仓库实跑验证：
+- 离线安装
+从 GitHub Releases 下载与你的操作系统和 CPU 架构匹配的压缩包。
+
+```bash
+mkdir ./milvus-health
+cd ./milvus-health
+tar -xzf milvus-health_<version>_<os>_<arch>.tar.gz
+chmod +x milvus-health
+./milvus-health version
+
+- 源码安装
 
 ```bash
 git clone https://github.com/weiqinzhou3/milvus-health.git
