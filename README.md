@@ -59,6 +59,7 @@ cd ./milvus-health
 tar -xzf milvus-health_<version>_<os>_<arch>.tar.gz
 chmod +x milvus-health
 ./milvus-health version
+```
 
 - 源码安装
 
