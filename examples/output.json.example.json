@@ -5,13 +5,13 @@
     "namespace": "milvus",
     "milvus_version": "",
     "arch_profile": "unknown",
-    "mq_type": "unknown"
+    "mq_type": "pulsar"
   },
   "result": "FAIL",
   "standby": false,
   "confidence": "low",
   "exit_code": 2,
-  "elapsed_ms": 1000,
+  "elapsed_ms": 60000,
   "summary": {
     "database_count": 0,
     "collection_count": 0,
@@ -43,6 +43,9 @@
       "message": "rw probe not executed"
     }
   },
+  "warnings": [
+    "standby confidence downgraded because probes were skipped"
+  ],
   "failures": [
     "create milvus client: context deadline exceeded",
     "create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory"
