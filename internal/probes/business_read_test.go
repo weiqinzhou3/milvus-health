@@ -76,6 +76,46 @@ func TestBusinessReadProbe_Run_SkipsWhenDisabledByConfig(t *testing.T) {
 	}
 }
 
+func TestBusinessReadProbe_Run_ReportsUnavailableWhenClientInitializationFails(t *testing.T) {
+	t.Parallel()
+
+	cfg := &model.Config{
+		Cluster: model.ClusterConfig{
+			Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+		},
+		TimeoutSec: 30,
+		Probe: model.ProbeConfig{
+			Read: model.ReadProbeConfig{
+				MinSuccessTargets: 1,
+				Targets: []model.ReadProbeTarget{{
+					Database:   "default",
+					Collection: "book",
+					QueryExpr:  "id >= 0",
+				}},
+			},
+		},
+	}
+
+	result, err := (probes.DefaultBusinessReadProbe{
+		Factory: platformmilvus.FakeClientFactory{Err: errors.New("dial failed")},
+	}).Run(context.Background(), cfg, probes.ProbeScope{})
+	if err == nil {
+		t.Fatal("Run() expected error")
+	}
+	if result.Status != model.CheckStatusSkip {
+		t.Fatalf("Status = %s, want skip", result.Status)
+	}
+	if result.Message != "not run because business read probe client initialization failed" {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	if result.ConfiguredTargets != 1 {
+		t.Fatalf("ConfiguredTargets = %d, want 1", result.ConfiguredTargets)
+	}
+	if result.Check == nil || result.Check.Message != result.Message {
+		t.Fatalf("Check = %#v", result.Check)
+	}
+}
+
 func TestBusinessReadProbe_Run_QuerySuccess(t *testing.T) {
 	t.Parallel()
 

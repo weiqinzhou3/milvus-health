@@ -14,6 +14,12 @@
 
 `milvus-health validate` 仍然是独立的静态配置校验入口；真实 Milvus / K8s 连接、inventory 采集和 probe 执行都发生在 `check`。
 
+Phase 02 当前固定了配置契约：
+
+- YAML 未知字段会 fail fast，直接报错退出
+- 最终配置优先级固定为 `CLI 显式参数 > YAML 配置 > 默认值`
+- `output.format` / `output.detail` 会直接驱动 `check` 输出；CLI 显式传入时覆盖 YAML
+
 ## 当前已支持的核心能力
 
 - 真实 Milvus 连接，基于真实 SDK 采集 `milvus_version`
@@ -92,7 +98,7 @@ go build -o ./bin/milvus-health .
   - `milvus.username` / `password` / `token`：可选认证字段
 - `output`
   - `format`：`text` 或 `json`
-  - `detail`：默认输出是否展开明细
+  - `detail`：默认输出是否展开明细；CLI 可用 `--detail` 或 `--detail=false` 显式覆盖
 - `probe.read`
   - `enabled`：是否执行 Business Read Probe，默认 `true`
   - `min_success_targets`：最少成功 target 数
@@ -105,11 +111,13 @@ go build -o ./bin/milvus-health .
 
 关键语义：
 
+- YAML 中出现未知字段时，`validate` / `check` 都会直接报 `CONFIG_INVALID`
 - `probe.read.enabled=false`：不执行 Business Read Probe，输出中仍保留 `business-read-probe`，状态为 `skip`，message 为 `disabled by config`
 - `probe.rw.enabled=false`：不执行 RW Probe，不会真实写入 Milvus，输出中仍保留 `rw-probe`，状态为 `skip`
 - `probe.rw.enabled=true`：进入危险模式，会创建临时 database / collection 并执行真实写入
 - `probe.rw.cleanup=true`：只会尝试清理“本次运行创建”的测试资源，不会按前缀隐式删除历史测试库
 - 若发现历史同前缀测试库已存在，RW Probe 会直接 fail fast，并提示人工清理或更换 `probe.rw.test_database_prefix`
+- `probe.read.min_success_targets`：当前必须 `>= 1`；不再放行 `0`
 
 默认值要点：
 
@@ -137,7 +145,8 @@ go build -o ./bin/milvus-health .
 - `checks`
   - 每条检查项包含 `status`、`message`，必要时包含 `recommendation`、`evidence`、`actual`
 - `detail`
-  - `--detail` 会展开 Milvus inventory、collection 明细、K8s pod / service / endpoint 明细、Business Read Probe targets、RW Probe steps
+  - `output.detail=true` 或 `--detail` 会展开 Milvus inventory、collection 明细、K8s pod / service / endpoint 明细、Business Read Probe targets、RW Probe steps
+  - `--detail=false` 会显式关闭 detail，即使 YAML 里是 `true`
 - `exit_code`
   - `0` = PASS
   - `1` = WARN
@@ -152,7 +161,7 @@ go build -o ./bin/milvus-health .
 - `FAIL`：关键连接、采集或 probe 失败
 - `SKIP`：该能力未执行，常见于配置关闭、前置条件不满足或上游采集失败
 
-当能力被配置关闭时，结果会明确表现为 `disabled by config`；例如 `probe.read.enabled=false` 会保留 `business-read-probe [skip]`，同时按当前设计把 `confidence` 降为 `low`。
+当能力被配置关闭时，结果会明确表现为 `disabled by config`；例如 `probe.read.enabled=false` 会保留 `business-read-probe [skip]`，同时按当前设计把 `confidence` 降为 `low`。当 probe 因上游失败而未执行时，也会明确输出 `not run because ...`，不再出现空白状态。
 
 ## 使用注意事项
 

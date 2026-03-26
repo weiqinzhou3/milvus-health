@@ -33,11 +33,11 @@
     "business_read": {
       "enabled": true,
       "executed": false,
-      "status": "",
-      "configured_targets": 0,
+      "status": "skip",
+      "configured_targets": 1,
       "successful_targets": 0,
       "min_success_targets": 1,
-      "message": ""
+      "message": "not run because Milvus connectivity failed"
     },
     "rw": {
       "status": "skip",

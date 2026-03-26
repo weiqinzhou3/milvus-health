@@ -282,6 +282,7 @@ type CheckOptions struct {
 	Database   string
 	Collection string
 	Detail     bool
+	DetailSet  bool
 }
 
 type ValidateOptions struct {
@@ -452,18 +453,19 @@ type ClusterInfo struct {
 type ClusterOutputView = ClusterInfo
 
 type AnalysisResult struct {
-	Cluster    ClusterInfo       `json:"cluster"`
-	Result     FinalResult       `json:"result"`
-	Standby    bool              `json:"standby"`
-	Confidence ConfidenceLevel   `json:"confidence"`
-	ExitCode   int               `json:"exit_code"`
-	ElapsedMS  int64             `json:"elapsed_ms"`
-	Summary    AnalysisSummary   `json:"summary"`
-	Probes     ProbeOutputView   `json:"probes"`
-	Inventory  *ClusterInventory `json:"inventory,omitempty"`
-	Warnings   []string          `json:"warnings,omitempty"`
-	Failures   []string          `json:"failures,omitempty"`
-	Checks     []CheckResult     `json:"checks,omitempty"`
+	Cluster       ClusterInfo       `json:"cluster"`
+	Result        FinalResult       `json:"result"`
+	Standby       bool              `json:"standby"`
+	Confidence    ConfidenceLevel   `json:"confidence"`
+	ExitCode      int               `json:"exit_code"`
+	ElapsedMS     int64             `json:"elapsed_ms"`
+	Summary       AnalysisSummary   `json:"summary"`
+	Probes        ProbeOutputView   `json:"probes"`
+	Inventory     *ClusterInventory `json:"inventory,omitempty"`
+	Warnings      []string          `json:"warnings,omitempty"`
+	Failures      []string          `json:"failures,omitempty"`
+	Checks        []CheckResult     `json:"checks,omitempty"`
+	AppliedConfig *Config           `json:"-"`
 }
 
 type MetadataSnapshot struct {

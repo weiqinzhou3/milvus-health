@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/weiqinzhou3/milvus-health/internal/config"
@@ -55,6 +56,25 @@ func TestYAMLLoader_Load_Success(t *testing.T) {
 	}
 	if cfg.Cluster.Name == "" {
 		t.Fatal("cluster.name should not be empty")
+	}
+}
+
+func TestYAMLLoader_Load_FailsFastOnUnknownField(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\noutput:\n  format: text\n  unexpected: true\nprobe:\n  read:\n    min_success_targets: 1\n    targets:\n      - database: default\n        collection: book\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := (config.YAMLLoader{}).Load(configPath)
+	if err == nil {
+		t.Fatal("Load() expected error")
+	}
+	if !strings.Contains(err.Error(), "unexpected") {
+		t.Fatalf("error = %v, want unknown field details", err)
 	}
 }
 
@@ -221,15 +241,17 @@ func TestConfigValidator_Validate_Fail_WhenReadProbeTargetMissingRequiredField(t
 	}
 }
 
-func TestConfigValidator_Validate_Success_WhenMinSuccessTargetsIsZero(t *testing.T) {
+func TestConfigValidator_Validate_Fail_WhenMinSuccessTargetsIsZero(t *testing.T) {
 	t.Parallel()
 
 	cfg := validConfig()
 	cfg.Probe.Read.MinSuccessTargets = 0
 
-	if err := (config.ConfigValidator{}).Validate(cfg); err != nil {
-		t.Fatalf("Validate() error = %v", err)
+	err := (config.ConfigValidator{}).Validate(cfg)
+	if err == nil {
+		t.Fatal("Validate() expected error")
 	}
+	assertHasFieldError(t, err, "probe.read.min_success_targets")
 }
 
 func TestConfigValidator_Validate_Success_WhenReadProbeDisabled(t *testing.T) {
@@ -440,9 +462,10 @@ func TestCLIOverrideApplier_ApplyCheckOverrides(t *testing.T) {
 
 	cleanup := true
 	opts := model.CheckOptions{
-		Format:  model.OutputFormatJSON,
-		Detail:  true,
-		Cleanup: &cleanup,
+		Format:    model.OutputFormatJSON,
+		Detail:    true,
+		DetailSet: true,
+		Cleanup:   &cleanup,
 	}
 
 	if err := (config.CLIOverrideApplier{}).ApplyCheckOverrides(cfg, opts); err != nil {
@@ -456,6 +479,25 @@ func TestCLIOverrideApplier_ApplyCheckOverrides(t *testing.T) {
 	}
 	if !cfg.Probe.RW.Cleanup {
 		t.Fatal("Probe.RW.Cleanup should be true")
+	}
+}
+
+func TestCLIOverrideApplier_ApplyCheckOverrides_DetailFalseWhenExplicitlySet(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Output.Detail = true
+
+	opts := model.CheckOptions{
+		Detail:    false,
+		DetailSet: true,
+	}
+
+	if err := (config.CLIOverrideApplier{}).ApplyCheckOverrides(cfg, opts); err != nil {
+		t.Fatalf("ApplyCheckOverrides() error = %v", err)
+	}
+	if cfg.Output.Detail {
+		t.Fatal("Output.Detail should be false")
 	}
 }
 
@@ -485,6 +527,68 @@ func TestCLIOverrideApplier_CleanupOverride(t *testing.T) {
 	}
 	if cfg.Probe.RW.Cleanup {
 		t.Fatal("Probe.RW.Cleanup should be false")
+	}
+}
+
+func TestResolveValidateConfig_AppliesDefaultsAfterLoad(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\nprobe:\n  read:\n    targets:\n      - database: default\n        collection: book\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := config.ResolveValidateConfig(config.YAMLLoader{}, config.DefaultValueApplier{}, config.ConfigValidator{}, model.ValidateOptions{ConfigPath: configPath})
+	if err != nil {
+		t.Fatalf("ResolveValidateConfig() error = %v", err)
+	}
+	if cfg.Output.Format != model.OutputFormatText {
+		t.Fatalf("Output.Format = %q, want %q", cfg.Output.Format, model.OutputFormatText)
+	}
+	if !cfg.Probe.Read.IsEnabled() {
+		t.Fatal("Probe.Read.Enabled should default to true")
+	}
+	if cfg.Probe.Read.MinSuccessTargets != 1 {
+		t.Fatalf("Probe.Read.MinSuccessTargets = %d, want 1", cfg.Probe.Read.MinSuccessTargets)
+	}
+}
+
+func TestResolveCheckConfig_PrioritizesCLIOverYAMLOverDefaults(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\nprobe:\n  read:\n    min_success_targets: 1\n    targets:\n      - database: default\n        collection: book\noutput:\n  format: json\n  detail: true\ntimeout_sec: 20\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := config.ResolveCheckConfig(
+		config.YAMLLoader{},
+		config.DefaultValueApplier{},
+		config.CLIOverrideApplier{},
+		config.ConfigValidator{},
+		model.CheckOptions{
+			ConfigPath: configPath,
+			Format:     model.OutputFormatText,
+			Detail:     false,
+			DetailSet:  true,
+			TimeoutSec: 45,
+		},
+	)
+	if err != nil {
+		t.Fatalf("ResolveCheckConfig() error = %v", err)
+	}
+	if cfg.Output.Format != model.OutputFormatText {
+		t.Fatalf("Output.Format = %q, want %q", cfg.Output.Format, model.OutputFormatText)
+	}
+	if cfg.Output.Detail {
+		t.Fatal("Output.Detail should be false after CLI override")
+	}
+	if cfg.TimeoutSec != 45 {
+		t.Fatalf("TimeoutSec = %d, want 45", cfg.TimeoutSec)
 	}
 }
 

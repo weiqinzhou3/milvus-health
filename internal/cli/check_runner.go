@@ -25,22 +25,9 @@ type DefaultCheckRunner struct {
 }
 
 func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*model.AnalysisResult, error) {
-	cfg, err := r.Loader.Load(opts.ConfigPath)
+	cfg, err := config.ResolveCheckConfig(r.Loader, r.DefaultApplier, r.OverrideApplier, r.Validator, opts)
 	if err != nil {
 		return nil, &model.AppError{Code: model.ErrCodeConfigInvalid, Cause: err}
-	}
-	if r.DefaultApplier != nil {
-		r.DefaultApplier.Apply(cfg)
-	}
-	if r.OverrideApplier != nil {
-		if err := r.OverrideApplier.ApplyCheckOverrides(cfg, opts); err != nil {
-			return nil, &model.AppError{Code: model.ErrCodeConfigInvalid, Cause: err}
-		}
-	}
-	if r.Validator != nil {
-		if err := r.Validator.Validate(cfg); err != nil {
-			return nil, &model.AppError{Code: model.ErrCodeConfigInvalid, Cause: err}
-		}
 	}
 	if r.Analyzer == nil {
 		return nil, &model.AppError{Code: model.ErrCodeRuntime, Message: "analyzer is nil"}
@@ -61,7 +48,10 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 			BusinessReadProbe: model.BusinessReadProbeResult{
 				Enabled:           cfg.Probe.Read.IsEnabled(),
 				Executed:          false,
+				Status:            model.CheckStatusSkip,
+				ConfiguredTargets: len(cfg.Probe.Read.Targets),
 				MinSuccessTargets: cfg.Probe.Read.MinSuccessTargets,
+				Message:           defaultBusinessReadProbeMessage(cfg),
 			},
 			RWProbe: defaultRWProbeResult(cfg),
 		},
@@ -80,6 +70,7 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 	}
 
 	if r.MilvusCollector == nil {
+		input.Snapshot.BusinessReadProbe = businessReadProbeUnavailable(input.Snapshot.BusinessReadProbe, "not run because Milvus collector is unavailable")
 		input.Failures = append(input.Failures, "milvus collector is nil")
 		input.Checks = append(input.Checks,
 			model.CheckResult{
@@ -106,6 +97,7 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 	} else {
 		clusterInfo, err := r.MilvusCollector.CollectClusterInfo(ctx, cfg)
 		if err != nil {
+			input.Snapshot.BusinessReadProbe = businessReadProbeUnavailable(input.Snapshot.BusinessReadProbe, "not run because Milvus connectivity failed")
 			input.Failures = append(input.Failures, err.Error())
 			input.Checks = append(input.Checks,
 				model.CheckResult{
@@ -188,6 +180,8 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 				if probeErr != nil {
 					input.Failures = append(input.Failures, probeErr.Error())
 				}
+			} else if r.ReadProbe == nil && cfg.Probe.Read.IsEnabled() {
+				input.Snapshot.BusinessReadProbe = businessReadProbeUnavailable(input.Snapshot.BusinessReadProbe, "not run because business read probe is unavailable")
 			}
 			if r.RWProbe != nil && cfg.Probe.RW.Enabled {
 				rwResult, rwErr := r.RWProbe.Run(ctx, cfg)
@@ -242,7 +236,11 @@ func (r DefaultCheckRunner) Run(ctx context.Context, opts model.CheckOptions) (*
 
 	input.Snapshot.Cluster.MQType = resolveMQType(input.Snapshot.Cluster.MQType, cfg, input.Inventory.K8s)
 	input.EndedAt = time.Now()
-	return r.Analyzer.Analyze(ctx, input)
+	result, err := r.Analyzer.Analyze(ctx, input)
+	if result != nil {
+		result.AppliedConfig = cfg
+	}
+	return result, err
 }
 
 func defaultRWProbeResult(cfg *model.Config) model.RWProbeResult {
@@ -291,4 +289,39 @@ func resolveMQType(current string, cfg *model.Config, k8sInventory model.K8sInve
 	default:
 		return "unknown"
 	}
+}
+
+func defaultBusinessReadProbeMessage(cfg *model.Config) string {
+	switch {
+	case cfg == nil:
+		return "not run"
+	case !cfg.Probe.Read.IsEnabled():
+		return "disabled by config"
+	case len(cfg.Probe.Read.Targets) == 0:
+		return "not configured"
+	default:
+		return "not run"
+	}
+}
+
+func businessReadProbeUnavailable(result model.BusinessReadProbeResult, message string) model.BusinessReadProbeResult {
+	if result.Check != nil || result.Executed || !result.Enabled || result.ConfiguredTargets == 0 {
+		return result
+	}
+	result.Status = model.CheckStatusSkip
+	result.Message = message
+	result.Check = &model.CheckResult{
+		Category: "probe",
+		Name:     "business-read-probe",
+		Status:   model.CheckStatusSkip,
+		Message:  message,
+		Actual: map[string]any{
+			"enabled":            result.Enabled,
+			"executed":           result.Executed,
+			"configured_targets": result.ConfiguredTargets,
+			"successful_targets": result.SuccessfulTargets,
+		},
+		Expected: result.MinSuccessTargets,
+	}
+	return result
 }

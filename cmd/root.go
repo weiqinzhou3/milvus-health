@@ -114,15 +114,12 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 				return err
 			}
 			result.ExitCode = exitMapper.FromAnalysis(result)
-			format := opts.Format
-			if format == "" {
-				format = model.OutputFormatText
-			}
+			format, detail := resolvedRenderConfig(result, opts)
 			renderer, err := factory.Get(format)
 			if err != nil {
 				return &model.AppError{Code: model.ErrCodeRender, Cause: err}
 			}
-			out, err := renderer.Render(result, render.RenderOptions{Detail: opts.Detail})
+			out, err := renderer.Render(result, render.RenderOptions{Detail: detail})
 			if err != nil {
 				return &model.AppError{Code: model.ErrCodeRender, Cause: err}
 			}
@@ -143,6 +140,9 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 	command.Flags().BoolVar(&opts.Detail, "detail", false, "render detailed checks")
 	command.Flags().Bool("cleanup", false, "override probe.rw.cleanup for current-run RW resources only (requires probe.rw.enabled=true)")
 	command.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("detail") {
+			opts.DetailSet = true
+		}
 		if cmd.Flags().Changed("cleanup") {
 			value, err := cmd.Flags().GetBool("cleanup")
 			if err != nil {
@@ -153,6 +153,18 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 		return nil
 	}
 	return command
+}
+
+func resolvedRenderConfig(result *model.AnalysisResult, opts model.CheckOptions) (model.OutputFormat, bool) {
+	if result != nil && result.AppliedConfig != nil {
+		return result.AppliedConfig.Output.Format, result.AppliedConfig.Output.Detail
+	}
+
+	format := opts.Format
+	if format == "" {
+		format = model.OutputFormatText
+	}
+	return format, opts.Detail
 }
 
 func Execute() int {

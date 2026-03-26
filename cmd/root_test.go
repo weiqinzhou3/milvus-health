@@ -162,6 +162,30 @@ func TestExecute_Validate_Returns3_OnConfigInvalid(t *testing.T) {
 	}
 }
 
+func TestExecute_Validate_Returns3_OnUnknownField(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "invalid.yaml")
+	content := "cluster:\n  name: test\n  milvus:\n    uri: localhost:19530\noutput:\n  format: text\n  unexpected: true\nprobe:\n  read:\n    min_success_targets: 1\n    targets:\n      - database: default\n        collection: book\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := ExecuteArgs([]string{"validate", "--config", configPath}, &stdout, &stderr)
+	if exitCode != 3 {
+		t.Fatalf("ExecuteArgs() = %d, want 3", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout should be empty, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "unexpected") {
+		t.Fatalf("stderr = %q, want unknown field message", stderr.String())
+	}
+}
+
 func TestValidate_Success_WritesExpectedStdout(t *testing.T) {
 	t.Parallel()
 

@@ -31,6 +31,8 @@ Last updated: 2026-03-26
 
 - `check` / `validate` / `version` 命令路径均已存在
 - YAML 加载、默认值注入、CLI override、静态校验已接通
+- YAML 严格字段校验已接通：未知字段会直接报错退出，不再 silently ignore
+- 最终配置优先级固定为 `CLI 显式参数 > YAML 配置 > 默认值`
 - `cluster.milvus.uri`、`output.format`、`probe.read.*`、`probe.rw.*`、`rules.resource_warn_ratio` 等关键字段已有约束
 
 ### 3.2 Real Milvus collection
@@ -89,13 +91,16 @@ Last updated: 2026-03-26
 ### 3.5 Output and analysis
 
 - `text` / `json` 输出已反映真实采集结果
-- `--detail` 已展开：
+- `output.format` / `output.detail` 已接到最终合并配置，不再只在 CLI 显式传参时生效
+- `--detail` / `--detail=false` 已按 `CLI > YAML > default` 优先级展开或关闭 detail
+- detail 输出已展开：
   - Milvus inventory
   - collection detail
   - K8s pod/service/endpoint detail
   - Business Read Probe target detail
   - RW Probe step detail
   - `checks`
+- Business Read Probe 在 disabled / not configured / unavailable 时都已有明确 message，不再输出空白状态
 - Analyzer 已能基于真实结果给出最小可用 PASS / WARN / FAIL 判断，并处理连接失败、inventory 缺失、probe skip/fail、K8s metrics 缺失、Pod readiness/restart、usage/limit ratio 等场景
 
 ## 4. What this repository should no longer claim
@@ -119,6 +124,7 @@ Last updated: 2026-03-26
 - RW Probe 当前是最小可用 query-based closure，还不是更完整的 search-verification 版本
 - 当前版本定位仍然是工程师陪同使用的 beta 工具，不应被描述为客户自助式“零风险”巡检工具
 - Business Read Probe 只有在配置 `anns_field` 时才会进入 search 分支
+- `probe.read.min_success_targets` 当前收紧为 `>= 1`，不再放行 `0`
 - K8s 资源使用率依赖 `metrics-server` 与权限；缺失时按 degrade 语义处理
 - `binlog_size_bytes` 解析已覆盖当前验证过的 payload 形态，但尚未声称覆盖所有历史变体
 - [examples/config.example.yaml](../examples/config.example.yaml) 故意使用失败路径示例，便于快速演示 detail 输出；它不是生产环境配置

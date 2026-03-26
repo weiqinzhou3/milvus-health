@@ -128,6 +128,60 @@ func TestValidateRunner_Run_ReturnsNil_ForValidConfig(t *testing.T) {
 	}
 }
 
+func TestCheckRunner_PassesMergedConfigToAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	runner := cli.DefaultCheckRunner{
+		Loader: fakeLoader{cfg: &model.Config{
+			Cluster: model.ClusterConfig{
+				Name:   "demo",
+				Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+			},
+			Probe: model.ProbeConfig{
+				Read: model.ReadProbeConfig{
+					MinSuccessTargets: 1,
+					Targets: []model.ReadProbeTarget{
+						{Database: "default", Collection: "book"},
+					},
+				},
+			},
+			Output: model.OutputConfig{
+				Format: model.OutputFormatText,
+				Detail: true,
+			},
+			TimeoutSec: 15,
+		}},
+		DefaultApplier:  config.DefaultValueApplier{},
+		OverrideApplier: config.CLIOverrideApplier{},
+		Validator:       config.ConfigValidator{},
+		MilvusCollector: fakeMilvusCollector{},
+		K8sCollector:    fakeK8sCollector{},
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{
+		ConfigPath: "test.yaml",
+		Format:     model.OutputFormatJSON,
+		Detail:     false,
+		DetailSet:  true,
+		TimeoutSec: 45,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if analyzer.input.Config.Output.Format != model.OutputFormatJSON {
+		t.Fatalf("Output.Format = %q, want %q", analyzer.input.Config.Output.Format, model.OutputFormatJSON)
+	}
+	if analyzer.input.Config.Output.Detail {
+		t.Fatalf("Output.Detail = %t, want false", analyzer.input.Config.Output.Detail)
+	}
+	if analyzer.input.Config.TimeoutSec != 45 {
+		t.Fatalf("TimeoutSec = %d, want 45", analyzer.input.Config.TimeoutSec)
+	}
+}
+
 func TestCheckRunner_Run_ReturnsStubAnalysisResult(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +193,20 @@ func TestCheckRunner_Run_ReturnsStubAnalysisResult(t *testing.T) {
 	}
 
 	runner := cli.DefaultCheckRunner{
-		Loader:          fakeLoader{cfg: &model.Config{}},
+		Loader: fakeLoader{cfg: &model.Config{
+			Cluster: model.ClusterConfig{
+				Name:   "demo",
+				Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+			},
+			Probe: model.ProbeConfig{
+				Read: model.ReadProbeConfig{
+					MinSuccessTargets: 1,
+					Targets: []model.ReadProbeTarget{
+						{Database: "default", Collection: "book"},
+					},
+				},
+			},
+		}},
 		DefaultApplier:  fakeDefaultApplier{},
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
@@ -175,6 +242,9 @@ func TestCheckRunner_Run_ReturnsStubAnalysisResult(t *testing.T) {
 	}
 	if got != expected {
 		t.Fatalf("Run() got %#v, want %#v", got, expected)
+	}
+	if got.AppliedConfig == nil {
+		t.Fatal("AppliedConfig should be populated")
 	}
 }
 
@@ -254,7 +324,20 @@ func TestCheckRunner_CollectsMilvusFactsBeforeAnalyze(t *testing.T) {
 	}
 	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
 	runner := cli.DefaultCheckRunner{
-		Loader:          fakeLoader{cfg: &model.Config{}},
+		Loader: fakeLoader{cfg: &model.Config{
+			Cluster: model.ClusterConfig{
+				Name:   "demo",
+				Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+			},
+			Probe: model.ProbeConfig{
+				Read: model.ReadProbeConfig{
+					MinSuccessTargets: 1,
+					Targets: []model.ReadProbeTarget{
+						{Database: "default", Collection: "book"},
+					},
+				},
+			},
+		}},
 		DefaultApplier:  fakeDefaultApplier{},
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
@@ -629,7 +712,20 @@ func TestCheckRunner_TransformsMilvusFailureIntoAnalyzeInput(t *testing.T) {
 
 	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
 	runner := cli.DefaultCheckRunner{
-		Loader:          fakeLoader{cfg: &model.Config{}},
+		Loader: fakeLoader{cfg: &model.Config{
+			Cluster: model.ClusterConfig{
+				Name:   "demo",
+				Milvus: model.MilvusConfig{URI: "127.0.0.1:19530"},
+			},
+			Probe: model.ProbeConfig{
+				Read: model.ReadProbeConfig{
+					MinSuccessTargets: 1,
+					Targets: []model.ReadProbeTarget{
+						{Database: "default", Collection: "book"},
+					},
+				},
+			},
+		}},
 		DefaultApplier:  fakeDefaultApplier{},
 		OverrideApplier: fakeOverrideApplier{},
 		Validator:       fakeValidator{},
@@ -652,6 +748,12 @@ func TestCheckRunner_TransformsMilvusFailureIntoAnalyzeInput(t *testing.T) {
 	}
 	if got.Checks[len(got.Checks)-1].Name != "k8s-collection" || got.Checks[len(got.Checks)-1].Status != model.CheckStatusPass {
 		t.Fatalf("last check = %#v", got.Checks[len(got.Checks)-1])
+	}
+	if got.Snapshot.BusinessReadProbe.Status != model.CheckStatusSkip {
+		t.Fatalf("BusinessReadProbe = %#v, want skip when Milvus connectivity fails before probe execution", got.Snapshot.BusinessReadProbe)
+	}
+	if got.Snapshot.BusinessReadProbe.Message != "not run because Milvus connectivity failed" {
+		t.Fatalf("BusinessReadProbe.Message = %q", got.Snapshot.BusinessReadProbe.Message)
 	}
 }
 

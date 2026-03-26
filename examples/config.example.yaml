@@ -2,7 +2,7 @@
 # 说明：
 # 1. 这份示例按当前 main 分支“实际支持的配置字段”补齐。
 # 2. 未被当前代码支持的键（例如 k8s.resource_usage.source）不要写进来，
-#    否则当前版本会静默忽略，造成“看起来配了但实际不生效”的误解。
+#    否则当前版本会直接报错退出，避免“看起来配了但实际不生效”的误解。
 
 cluster:
   # 集群展示名称，会出现在输出头部
@@ -43,7 +43,7 @@ probe:
     enabled: true
 
     # 至少需要成功的 target 数量
-    # 当前校验要求 >= 1
+    # 当前校验要求 >= 1；0 会被 validate 拒绝
     min_success_targets: 1
 
     # 只读探测目标列表
@@ -101,11 +101,13 @@ rules:
 
 output:
   # 输出格式：text 或 json
+  # YAML 中配置的 format 会直接驱动输出；CLI --format 显式传入时会覆盖这里
   format: text
 
   # 是否输出详细信息
   # false：偏概览
   # true：输出 detail / probes / steps 等更多信息
+  # YAML 中配置的 detail 会直接驱动输出；CLI --detail/--detail=false 显式传入时会覆盖这里
   detail: false
 
 # 整体超时时间（秒）

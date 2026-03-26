@@ -27,17 +27,8 @@ type DefaultValidateRunner struct {
 
 func (r DefaultValidateRunner) Run(ctx context.Context, opts model.ValidateOptions) error {
 	_ = ctx
-	cfg, err := r.Loader.Load(opts.ConfigPath)
-	if err != nil {
+	if _, err := config.ResolveValidateConfig(r.Loader, r.DefaultApplier, r.Validator, opts); err != nil {
 		return &model.AppError{Code: model.ErrCodeConfigInvalid, Cause: err}
-	}
-	if r.DefaultApplier != nil {
-		r.DefaultApplier.Apply(cfg)
-	}
-	if r.Validator != nil {
-		if err := r.Validator.Validate(cfg); err != nil {
-			return &model.AppError{Code: model.ErrCodeConfigInvalid, Cause: err}
-		}
 	}
 	return nil
 }

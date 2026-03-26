@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -59,10 +60,56 @@ func (YAMLLoader) Load(path string) (*model.Config, error) {
 		return nil, err
 	}
 	var cfg model.Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func ResolveValidateConfig(loader Loader, defaults DefaultApplier, validator Validator, opts model.ValidateOptions) (*model.Config, error) {
+	cfg, err := loadConfig(loader, opts.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	if defaults != nil {
+		defaults.Apply(cfg)
+	}
+	if validator != nil {
+		if err := validator.Validate(cfg); err != nil {
+			return nil, err
+		}
+	}
+	return cfg, nil
+}
+
+func ResolveCheckConfig(loader Loader, defaults DefaultApplier, overrides OverrideApplier, validator Validator, opts model.CheckOptions) (*model.Config, error) {
+	cfg, err := loadConfig(loader, opts.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	if defaults != nil {
+		defaults.Apply(cfg)
+	}
+	if overrides != nil {
+		if err := overrides.ApplyCheckOverrides(cfg, opts); err != nil {
+			return nil, err
+		}
+	}
+	if validator != nil {
+		if err := validator.Validate(cfg); err != nil {
+			return nil, err
+		}
+	}
+	return cfg, nil
+}
+
+func loadConfig(loader Loader, path string) (*model.Config, error) {
+	if loader == nil {
+		return nil, &ConfigError{Code: "CONFIG_INVALID", Message: "config loader is nil"}
+	}
+	return loader.Load(path)
 }
 
 type ConfigValidator struct{}
@@ -91,8 +138,8 @@ func (ConfigValidator) Validate(cfg *model.Config) error {
 	default:
 		fields = append(fields, FieldError{Field: "output.format", Message: "must be text or json"})
 	}
-	if cfg.Probe.Read.MinSuccessTargets < 0 {
-		fields = append(fields, FieldError{Field: "probe.read.min_success_targets", Message: "must be >= 0"})
+	if cfg.Probe.Read.MinSuccessTargets < 1 {
+		fields = append(fields, FieldError{Field: "probe.read.min_success_targets", Message: "must be >= 1"})
 	}
 	for i, target := range cfg.Probe.Read.Targets {
 		if strings.TrimSpace(target.Database) == "" {
@@ -173,8 +220,8 @@ func (CLIOverrideApplier) ApplyCheckOverrides(cfg *model.Config, opts model.Chec
 	if opts.Format != "" {
 		cfg.Output.Format = opts.Format
 	}
-	if opts.Detail {
-		cfg.Output.Detail = true
+	if opts.DetailSet {
+		cfg.Output.Detail = opts.Detail
 	}
 	if opts.Cleanup != nil {
 		cfg.Probe.RW.Cleanup = *opts.Cleanup

@@ -51,15 +51,18 @@ func (p DefaultBusinessReadProbe) Run(ctx context.Context, cfg *model.Config, sc
 		result.Check = buildBusinessReadProbeCheck(result)
 		return result, nil
 	}
+	result.ConfiguredTargets = len(filteredTargets)
 
 	client, err := p.newClient(ctx, cfg)
 	if err != nil {
+		result.Status = model.CheckStatusSkip
+		result.Message = "not run because business read probe client initialization failed"
+		result.Check = buildBusinessReadProbeCheck(result)
 		return result, &model.AppError{Code: model.ErrCodeProbeRead, Message: fmt.Sprintf("create milvus client: %v", err), Cause: err}
 	}
 	defer client.Close(ctx)
 
 	result.Executed = true
-	result.ConfiguredTargets = len(filteredTargets)
 	result.Targets = make([]model.BusinessReadTargetResult, 0, len(filteredTargets))
 	for _, target := range filteredTargets {
 		targetResult := p.runTarget(ctx, client, target)

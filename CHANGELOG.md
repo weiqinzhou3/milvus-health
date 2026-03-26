@@ -42,6 +42,11 @@ This planned release marks the point where `main` should be described as an earl
 
 - `main` is now documented as a real early deliverable with live inspection capability
 - `check` is now documented and rendered as safe-by-default, with explicit `safe` / `dangerous` mode output
+- Phase 02 now enforces strict YAML known-field validation; unknown config keys fail fast instead of being silently ignored
+- `output.format` / `output.detail` now follow a single merge rule: `CLI explicit > YAML > default`
+- `check` rendering now consumes the merged effective config, so YAML output settings work without requiring matching CLI flags
+- `probe.read.min_success_targets` validation is now tightened to `>= 1` to match the currently supported runtime semantics
+- Business Read Probe now renders explicit unavailable/not-run messages instead of leaving failure-path output blank
 - Historical prefixed RW test databases are no longer deleted implicitly; conflicts now fail fast and require manual handling
 - README quickstart now documents the current build / validate / detail-mode check commands that were re-run during doc sync
 - Bundled output examples now track the current failure-path default output instead of stale pre-sync samples
