@@ -147,10 +147,10 @@ func TestCheckWithFakeRealPipeline_StillReturnsStableText(t *testing.T) {
 	app := newApp(&stdout, &stderr, fakeRealDependencies())
 
 	exitCode := app.Execute([]string{"check", "--config", "../examples/config.example.yaml", "--format", "text"})
-	if exitCode != 0 {
-		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
+	if exitCode != 1 {
+		t.Fatalf("Execute() = %d, want 1; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
-	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "RW Probe: status=pass enabled=true insert_rows=100 vector_dim=128 cleanup_enabled=true cleanup_executed=true message=rw probe completed successfully", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster:", "Milvus Version: 2.6.1", "Arch Profile: v2.6", "Run Mode: safe rw_probe_enabled=false cleanup_enabled=false", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=1", "K8s Summary: ready=1 not_ready=0 services=1 endpoints=1 resource_usage=available (1/1 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "RW Probe: status=skip enabled=false insert_rows=100 vector_dim=128 cleanup_enabled=false cleanup_executed=false message=rw probe disabled", "Warnings: standby confidence downgraded because probes were skipped", "Databases: default(book)"} {
 		if !strings.Contains(stdout.String(), token) {
 			t.Fatalf("stdout missing %q: %s", token, stdout.String())
 		}
@@ -165,8 +165,8 @@ func TestCheckFormatJSON_StillReturnsPureJSON(t *testing.T) {
 	app := newApp(&stdout, &stderr, fakeRealDependencies())
 
 	exitCode := app.Execute([]string{"check", "--config", "../examples/config.example.yaml", "--format", "json"})
-	if exitCode != 0 {
-		t.Fatalf("Execute() = %d, want 0; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
+	if exitCode != 1 {
+		t.Fatalf("Execute() = %d, want 1; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
 	out := strings.TrimSpace(stdout.String())
 	if !strings.HasPrefix(out, "{") || !strings.HasSuffix(out, "}") {
@@ -182,7 +182,7 @@ func TestExitCodeStillMatchesAnalysisResult(t *testing.T) {
 	app := newApp(&stdout, &stderr, fakeRealDependencies())
 
 	exitCode := app.Execute([]string{"check", "--config", "../examples/config.example.yaml", "--format", "text"})
-	if exitCode != 0 {
-		t.Fatalf("Execute() = %d, want 0", exitCode)
+	if exitCode != 1 {
+		t.Fatalf("Execute() = %d, want 1", exitCode)
 	}
 }

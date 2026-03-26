@@ -69,7 +69,7 @@ func sampleResult() *model.AnalysisResult {
 				TestCollection:  "rw_probe",
 				Message:         "rw probe completed successfully",
 				StepResults: []model.ProbeStepResult{
-					{Name: "cleanup-stale-databases", Success: true, DurationMS: 1},
+					{Name: "check-pre-existing-test-databases", Success: true, DurationMS: 1},
 					{Name: "create-database", Success: true, DurationMS: 2},
 					{Name: "create-collection", Success: true, DurationMS: 3},
 					{Name: "insert", Success: true, DurationMS: 4},
@@ -196,7 +196,7 @@ func TestTextRenderer_Render_BasicSummary(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 	text := string(out)
-	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "RW Probe: status=pass enabled=true insert_rows=3 vector_dim=4 cleanup_enabled=true cleanup_executed=true message=rw probe completed successfully", "Databases: default(book)"} {
+	for _, token := range []string{"Cluster", "Milvus URI", "Milvus Version", "Arch Profile", "Overall Result", "Standby", "Confidence", "Exit Code", "Run Mode: dangerous rw_probe_enabled=true cleanup_enabled=true", "Summary: databases=1 collections=1 total_rows=123 total_binlog_size_bytes=4567 pods=2", "K8s Summary: ready=1 not_ready=1 services=1 endpoints=1 resource_usage=partial (1/2 pods have metrics)", "Business Read Probe: status=pass configured_targets=1 successful_targets=1 min_success_targets=1 message=1/1 read probe targets succeeded", "RW Probe: status=pass enabled=true insert_rows=3 vector_dim=4 cleanup_enabled=true cleanup_executed=true message=rw probe completed successfully", "Databases: default(book)"} {
 		if !strings.Contains(text, "Summary:") {
 			t.Fatalf("text output missing summary: %s", text)
 		}
@@ -252,7 +252,7 @@ func TestTextRenderer_DetailTrue_IncludesChecks(t *testing.T) {
 	if !strings.Contains(string(out), "RW Probe Detail: test_database=milvus_health_test_1700000000000000000 test_collection=rw_probe insert_rows=3 vector_dim=4 cleanup_enabled=true cleanup_executed=true") {
 		t.Fatalf("detail=true should include rw probe detail: %s", out)
 	}
-	if !strings.Contains(string(out), "RW Probe Steps:\n- cleanup-stale-databases: success=true duration_ms=1") {
+	if !strings.Contains(string(out), "RW Probe Steps:\n- check-pre-existing-test-databases: success=true duration_ms=1") {
 		t.Fatalf("detail=true should include rw probe steps: %s", out)
 	}
 }
@@ -268,7 +268,7 @@ func TestJSONRenderer_DetailFalse_StableShape(t *testing.T) {
 	if err := json.Unmarshal(out, &decoded); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	for _, field := range []string{"cluster", "result", "standby", "confidence", "exit_code"} {
+	for _, field := range []string{"cluster", "result", "standby", "confidence", "exit_code", "mode"} {
 		if _, ok := decoded[field]; !ok {
 			t.Fatalf("missing field %q in output %s", field, out)
 		}
@@ -347,6 +347,9 @@ func TestRenderers_RWProbeSkipSummaryIsConsistent(t *testing.T) {
 	if !strings.Contains(string(textOut), "RW Probe: status=skip enabled=false insert_rows=3 vector_dim=4 cleanup_enabled=false cleanup_executed=false message=rw probe disabled") {
 		t.Fatalf("text output should include rw skip summary: %s", textOut)
 	}
+	if !strings.Contains(string(textOut), "Run Mode: safe rw_probe_enabled=false cleanup_enabled=false") {
+		t.Fatalf("text output should include safe run mode summary: %s", textOut)
+	}
 
 	jsonOut, err := (render.JSONRenderer{}).Render(result, render.RenderOptions{Detail: false})
 	if err != nil {
@@ -354,6 +357,11 @@ func TestRenderers_RWProbeSkipSummaryIsConsistent(t *testing.T) {
 	}
 
 	var decoded struct {
+		Mode struct {
+			Name           string `json:"name"`
+			RWProbeEnabled bool   `json:"rw_probe_enabled"`
+			CleanupEnabled bool   `json:"cleanup_enabled"`
+		} `json:"mode"`
 		Probes struct {
 			RW struct {
 				Status          model.CheckStatus `json:"status"`
@@ -371,6 +379,9 @@ func TestRenderers_RWProbeSkipSummaryIsConsistent(t *testing.T) {
 	}
 	if decoded.Probes.RW.Status != model.CheckStatusSkip {
 		t.Fatalf("RW status = %s, want skip", decoded.Probes.RW.Status)
+	}
+	if decoded.Mode.Name != "safe" || decoded.Mode.RWProbeEnabled || decoded.Mode.CleanupEnabled {
+		t.Fatalf("mode = %#v, want safe mode with both toggles false", decoded.Mode)
 	}
 	if decoded.Probes.RW.Enabled {
 		t.Fatalf("RW enabled = %t, want false", decoded.Probes.RW.Enabled)

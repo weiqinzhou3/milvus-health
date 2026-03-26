@@ -8,9 +8,10 @@ Overall Result: FAIL
 Standby: false
 Confidence: low
 Exit Code: 2
+Run Mode: safe rw_probe_enabled=false cleanup_enabled=false
 Summary: databases=0 collections=0 total_rows=unknown total_binlog_size_bytes=unknown pods=0
 K8s Summary: ready=0 not_ready=0 services=0 endpoints=0 resource_usage=unknown
 Business Read Probe: status= configured_targets=0 successful_targets=0 min_success_targets=1 message=unknown
-RW Probe: status=skip enabled=true insert_rows=100 vector_dim=128 cleanup_enabled=true cleanup_executed=false message=rw probe not executed
+RW Probe: status=skip enabled=false insert_rows=100 vector_dim=128 cleanup_enabled=false cleanup_executed=false message=rw probe disabled
 Warnings: standby confidence downgraded because probes were skipped
 Failures: create milvus client: context deadline exceeded; create k8s client: stat examples/milvus-health-missing-kubeconfig: no such file or directory

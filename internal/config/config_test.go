@@ -411,6 +411,12 @@ func TestDefaultValueApplier_AppliesExpectedDefaults(t *testing.T) {
 	cfg := &model.Config{}
 	(config.DefaultValueApplier{}).Apply(cfg)
 
+	if cfg.Probe.RW.Enabled {
+		t.Fatal("Probe.RW.Enabled should stay false by default")
+	}
+	if cfg.Probe.RW.Cleanup {
+		t.Fatal("Probe.RW.Cleanup should stay false by default")
+	}
 	if cfg.Probe.RW.TestDatabasePrefix == "" {
 		t.Fatal("Probe.RW.TestDatabasePrefix should have default")
 	}

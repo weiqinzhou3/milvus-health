@@ -1,12 +1,13 @@
 # milvus-health
 
-`milvus-health` 是面向 DBA、SRE 与运维人员的 Milvus 集群健康检查 CLI。它会连接真实 Milvus 与可选的 Kubernetes 集群，输出稳定的 `summary`、`checks`、`detail` 与 `exit code`，支持 `text` / `json` 两种结果格式，适合终端查看、重定向和自动化集成。
+`milvus-health` 是面向 DBA、SRE 与运维人员的 Milvus 集群健康检查 CLI。当前版本定位为工程师陪同使用的 beta 工具：`check` 默认以安全模式运行，只执行 inventory 与只读路径；只有显式开启 `probe.rw.enabled=true` 时才会进入会真实写 Milvus 的危险模式。它会连接真实 Milvus 与可选的 Kubernetes 集群，输出稳定的 `summary`、`checks`、`detail` 与 `exit code`，支持 `text` / `json` 两种结果格式，适合终端查看、重定向和自动化集成。
 
 ## 项目简介
 
 `milvus-health check` 的职责是执行真实巡检并渲染结果：
 
 - `summary` 聚合数据库、集合、总行数、binlog 大小、Pod / Service / Endpoint 等基础事实
+- `mode` 明确展示当前是 `safe` 还是 `dangerous`，以及 RW / cleanup 是否开启
 - `checks` 给出 PASS / WARN / FAIL / SKIP 检查项与建议
 - `detail` 在开启 `--detail` 后展开 inventory、probe target、probe step 等明细
 - `exit code` 用固定退出码表达最终状态，便于脚本化调用
@@ -24,7 +25,7 @@
 - K8s pod / service / endpoint / resource enrichment
 - K8s request / limit 与 metrics-server 提供的 CPU / Memory usage
 - Business Read Probe
-- RW Probe
+- 可显式开启的 RW Probe
 - `probe.read.enabled` / `probe.rw.enabled` 可通过配置控制是否执行
 - 当前重点验证 Milvus `2.4.7`；版本兼容范围按 [design_docs/milvus-health-spec-v1.3.md](design_docs/milvus-health-spec-v1.3.md) 中的 `v2.4` / `v2.6` 设计声明执行
 
@@ -36,9 +37,9 @@ Business Read Probe 当前走真实 Milvus 读路径：
 - `query`
 - `optional search`
 
-RW Probe 当前走最小可用的真实写读闭环：
+RW Probe 仅在显式开启 `probe.rw.enabled=true` 后进入危险模式，当前走最小可用的真实写读闭环：
 
-- cleanup stale prefixed databases
+- check pre-existing test databases
 - create database
 - create collection
 - insert
@@ -46,7 +47,7 @@ RW Probe 当前走最小可用的真实写读闭环：
 - create-index
 - load-collection await
 - query
-- optional cleanup
+- optional cleanup for current-run resources only
 
 ## Quickstart
 
@@ -76,9 +77,10 @@ go build -o ./bin/milvus-health .
 说明：
 
 - 入口配置为 [examples/config.example.yaml](examples/config.example.yaml)
-- 当前示例配置故意使用 `127.0.0.1:19530`、`timeout_sec: 1` 和一个不存在的 kubeconfig，用于演示真实失败路径
+- 当前示例配置默认是 `safe` 模式：`probe.rw.enabled=false`、`probe.rw.cleanup=false`
+- 当前示例配置故意使用 `127.0.0.1:19530` 和一个不存在的 kubeconfig，用于演示真实失败路径
 - 因此在未准备 Milvus / K8s 环境时，`validate` 会成功，而两个 `check` 通常返回 `exit code 2`
-- 仓库内置样例输出见 [examples/output.text.example.txt](examples/output.text.example.txt) 与 [examples/output.json.example.json](examples/output.json.example.json)；它们跟踪当前默认非 `--detail` 输出，`--detail` 会在此基础上追加 inventory、checks、probe target / step 明细
+- 仓库内置样例输出见 [examples/output.text.example.txt](examples/output.text.example.txt) 与 [examples/output.json.example.json](examples/output.json.example.json)；它们跟踪当前默认非 `--detail` 输出，并显式展示 `Run Mode` / `mode`
 
 ## 最小配置说明
 
@@ -96,15 +98,18 @@ go build -o ./bin/milvus-health .
   - `min_success_targets`：最少成功 target 数
   - `targets[*]`：read probe 的数据库、集合、查询表达式和输出字段
 - `probe.rw`
-  - `enabled`：是否执行 RW Probe
+  - `enabled`：是否执行 RW Probe；`false` 为默认安全模式，`true` 为危险模式
   - `test_database_prefix`：测试库前缀
-  - `cleanup`：是否自动清理 RW Probe 产生的测试资源
+  - `cleanup`：是否清理当前 RW Probe 本次运行创建的测试资源
   - `insert_rows` / `vector_dim`：最小写入闭环参数
 
 关键语义：
 
 - `probe.read.enabled=false`：不执行 Business Read Probe，输出中仍保留 `business-read-probe`，状态为 `skip`，message 为 `disabled by config`
-- `probe.rw.enabled=false`：不执行 RW Probe，输出中仍保留 `rw-probe`，状态为 `skip`
+- `probe.rw.enabled=false`：不执行 RW Probe，不会真实写入 Milvus，输出中仍保留 `rw-probe`，状态为 `skip`
+- `probe.rw.enabled=true`：进入危险模式，会创建临时 database / collection 并执行真实写入
+- `probe.rw.cleanup=true`：只会尝试清理“本次运行创建”的测试资源，不会按前缀隐式删除历史测试库
+- 若发现历史同前缀测试库已存在，RW Probe 会直接 fail fast，并提示人工清理或更换 `probe.rw.test_database_prefix`
 
 默认值要点：
 
@@ -113,6 +118,8 @@ go build -o ./bin/milvus-health .
 - `probe.read.min_success_targets = 1`
 - `probe.read.targets[*].query_expr = "id >= 0"`
 - `probe.read.targets[*].topk = 3`
+- `probe.rw.enabled = false`
+- `probe.rw.cleanup = false`
 - `probe.rw.test_database_prefix = milvus_health_test`
 - `probe.rw.insert_rows = 100`
 - `probe.rw.vector_dim = 128`
@@ -121,10 +128,12 @@ go build -o ./bin/milvus-health .
 
 ## 输出说明
 
-`check` 输出围绕四部分展开：
+`check` 输出围绕五部分展开：
 
 - `summary`
   - 数据库数、集合数、总行数、总 binlog 大小、Pod 数、Service 数、Endpoint 数、metrics 覆盖情况
+- `mode`
+  - 当前是否为 `safe` / `dangerous`，以及 RW / cleanup 是否开启
 - `checks`
   - 每条检查项包含 `status`、`message`，必要时包含 `recommendation`、`evidence`、`actual`
 - `detail`
@@ -148,8 +157,10 @@ go build -o ./bin/milvus-health .
 ## 使用注意事项
 
 - 某些能力依赖真实 Milvus / Kubernetes API 可达；示例配置默认演示的是失败路径
-- `probe.rw.enabled=true` 时，`check` 不是纯只读命令，会创建临时 database / collection 并执行真实读写
-- `cleanup=true` 会在 RW Probe 结束后尝试删除测试资源；`cleanup=false` 适合调试，但会保留测试资源
+- 当前版本更适合作为工程师陪同使用的 beta 工具，而不是客户自助式“零风险”巡检工具
+- `probe.rw.enabled=true` 时，`check` 会进入危险模式：创建临时 database / collection，并执行真实读写
+- `cleanup=true` 只会在 RW Probe 结束后尝试删除本次运行创建的测试资源；`cleanup=false` 绝不会执行删除
+- 若历史同前缀测试库已存在，当前版本不会再隐式删库，而是直接失败并提示人工处理
 - 建议为 `probe.rw.test_database_prefix` 使用专用前缀，避免与真实业务库冲突
 - 关闭 read probe 不会导致整体直接失败，但会让 `business-read-probe` 变为 `skip`，并将 `confidence` 降为 `low`
 - K8s 资源使用率依赖 `metrics-server` 与权限；缺失时会按 degrade 语义输出，而不是让命令崩溃

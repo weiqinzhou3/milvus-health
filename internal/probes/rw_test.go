@@ -12,6 +12,8 @@ import (
 	"github.com/weiqinzhou3/milvus-health/internal/probes"
 )
 
+const preExistingTestDatabaseCheckStep = "check-pre-existing-test-databases"
+
 func TestRWProbe_Run_SkipsWhenDisabled(t *testing.T) {
 	t.Parallel()
 
@@ -32,10 +34,7 @@ func TestRWProbe_Run_SucceedsWithCleanup(t *testing.T) {
 
 	testDB := "milvus_health_test_1700000000000000000"
 	client := &platformmilvus.FakeClient{
-		Databases: []string{"default", "milvus_health_test_1699999999999999999"},
-		Collections: map[string][]string{
-			"milvus_health_test_1699999999999999999": {"stale_rw"},
-		},
+		Databases: []string{"default"},
 		InsertResults: map[string]map[string]platformmilvus.InsertResult{
 			testDB: {"rw_probe": {InsertCount: 3}},
 		},
@@ -60,7 +59,7 @@ func TestRWProbe_Run_SucceedsWithCleanup(t *testing.T) {
 	if result.TestDatabase != testDB || result.TestCollection != "rw_probe" {
 		t.Fatalf("result = %#v", result)
 	}
-	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "insert", "flush", "create-index", "load-collection", "query", "cleanup"}
+	wantSteps := []string{preExistingTestDatabaseCheckStep, "create-database", "create-collection", "insert", "flush", "create-index", "load-collection", "query", "cleanup"}
 	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
 		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
 	}
@@ -77,9 +76,6 @@ func TestRWProbe_Run_SucceedsWithCleanup(t *testing.T) {
 		t.Fatalf("Operations = %#v", client.Operations)
 	}
 	if !containsOperation(client.Operations, "load-collection:"+testDB+".rw_probe") {
-		t.Fatalf("Operations = %#v", client.Operations)
-	}
-	if !containsOperation(client.Operations, "drop-collection:milvus_health_test_1699999999999999999.stale_rw") {
 		t.Fatalf("Operations = %#v", client.Operations)
 	}
 	if !containsOperation(client.Operations, "drop-database:"+testDB) {
@@ -121,17 +117,42 @@ func TestRWProbe_Run_LoadsCollectionBeforeQuery(t *testing.T) {
 	}
 }
 
-func TestRWProbe_Run_FailsWhenStaleCleanupFails(t *testing.T) {
+func TestRWProbe_Run_FailsFastWhenHistoricalTestDatabaseExists(t *testing.T) {
 	t.Parallel()
 
 	client := &platformmilvus.FakeClient{
 		Databases: []string{"milvus_health_test_1699999999999999999"},
-		Collections: map[string][]string{
-			"milvus_health_test_1699999999999999999": {"stale_rw"},
-		},
-		DropCollectionErrs: map[string]map[string]error{
-			"milvus_health_test_1699999999999999999": {"stale_rw": errors.New("permission denied")},
-		},
+	}
+
+	result, err := (probes.DefaultRWProbe{
+		Factory: platformmilvus.FakeClientFactory{Client: client},
+		Now:     fixedProbeTime(),
+	}).Run(context.Background(), rwProbeConfig(true, false, 3, 4))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Status != model.CheckStatusFail {
+		t.Fatalf("Status = %s, want fail", result.Status)
+	}
+	if !strings.Contains(result.Message, "pre-existing test database conflict") {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	if len(result.StepResults) != 1 || result.StepResults[0].Name != preExistingTestDatabaseCheckStep || result.StepResults[0].Success {
+		t.Fatalf("StepResults = %#v", result.StepResults)
+	}
+	if containsOperation(client.Operations, "create-database:"+result.TestDatabase) {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+	if containsOperation(client.Operations, "drop-database:milvus_health_test_1699999999999999999") {
+		t.Fatalf("Operations = %#v", client.Operations)
+	}
+}
+
+func TestRWProbe_Run_DoesNotDeleteHistoricalTestDatabaseWhenCleanupEnabled(t *testing.T) {
+	t.Parallel()
+
+	client := &platformmilvus.FakeClient{
+		Databases: []string{"milvus_health_test_1699999999999999999"},
 	}
 
 	result, err := (probes.DefaultRWProbe{
@@ -144,13 +165,10 @@ func TestRWProbe_Run_FailsWhenStaleCleanupFails(t *testing.T) {
 	if result.Status != model.CheckStatusFail {
 		t.Fatalf("Status = %s, want fail", result.Status)
 	}
-	if !strings.Contains(result.Message, "pre-existing test data cleanup failed") {
+	if !strings.Contains(result.Message, "remove them manually or change probe.rw.test_database_prefix") {
 		t.Fatalf("Message = %q", result.Message)
 	}
-	if len(result.StepResults) != 1 || result.StepResults[0].Name != "cleanup-stale-databases" || result.StepResults[0].Success {
-		t.Fatalf("StepResults = %#v", result.StepResults)
-	}
-	if containsOperation(client.Operations, "create-database:"+result.TestDatabase) {
+	if containsOperation(client.Operations, "drop-database:milvus_health_test_1699999999999999999") {
 		t.Fatalf("Operations = %#v", client.Operations)
 	}
 }
@@ -181,7 +199,7 @@ func TestRWProbe_Run_SucceedsWithoutCleanupWhenCleanupDisabled(t *testing.T) {
 	if result.CleanupExecuted {
 		t.Fatal("CleanupExecuted should be false when cleanup is disabled")
 	}
-	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "insert", "flush", "create-index", "load-collection", "query"}
+	wantSteps := []string{preExistingTestDatabaseCheckStep, "create-database", "create-collection", "insert", "flush", "create-index", "load-collection", "query"}
 	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
 		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
 	}
@@ -222,7 +240,7 @@ func TestRWProbe_Run_DoesNotCleanupAfterFailureWhenCleanupDisabled(t *testing.T)
 	if result.CleanupExecuted {
 		t.Fatal("CleanupExecuted should be false when cleanup is disabled")
 	}
-	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "insert", "flush", "create-index", "load-collection", "query"}
+	wantSteps := []string{preExistingTestDatabaseCheckStep, "create-database", "create-collection", "insert", "flush", "create-index", "load-collection", "query"}
 	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
 		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
 	}
@@ -257,7 +275,7 @@ func TestRWProbe_Run_FailsWhenCreateDatabaseFails(t *testing.T) {
 	if !strings.Contains(result.Message, "create database failed") {
 		t.Fatalf("Message = %q", result.Message)
 	}
-	wantSteps := []string{"cleanup-stale-databases", "create-database"}
+	wantSteps := []string{preExistingTestDatabaseCheckStep, "create-database"}
 	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
 		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
 	}
@@ -295,7 +313,7 @@ func TestRWProbe_Run_FailsWhenCreateCollectionFailsAndCleansDatabase(t *testing.
 	if !result.CleanupExecuted {
 		t.Fatal("CleanupExecuted should be true after collection creation failure")
 	}
-	wantSteps := []string{"cleanup-stale-databases", "create-database", "create-collection", "cleanup"}
+	wantSteps := []string{preExistingTestDatabaseCheckStep, "create-database", "create-collection", "cleanup"}
 	if got := stepNames(result.StepResults); strings.Join(got, ",") != strings.Join(wantSteps, ",") {
 		t.Fatalf("step names = %#v, want %#v", got, wantSteps)
 	}

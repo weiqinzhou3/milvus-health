@@ -21,12 +21,19 @@ type RendererFactory interface {
 	Get(format model.OutputFormat) (Renderer, error)
 }
 
+type runModeSummary struct {
+	Name           string `json:"name"`
+	RWProbeEnabled bool   `json:"rw_probe_enabled"`
+	CleanupEnabled bool   `json:"cleanup_enabled"`
+}
+
 type TextRenderer struct{}
 
 func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]byte, error) {
 	if result == nil {
 		return nil, fmt.Errorf("analysis result is nil")
 	}
+	mode := summarizeRunMode(result)
 	var b strings.Builder
 	fmt.Fprintf(&b, "Cluster: %s\n", result.Cluster.Name)
 	fmt.Fprintf(&b, "Milvus URI: %s\n", result.Cluster.MilvusURI)
@@ -38,6 +45,7 @@ func (TextRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 	fmt.Fprintf(&b, "Standby: %t\n", result.Standby)
 	fmt.Fprintf(&b, "Confidence: %s\n", result.Confidence)
 	fmt.Fprintf(&b, "Exit Code: %d\n", result.ExitCode)
+	fmt.Fprintf(&b, "Run Mode: %s rw_probe_enabled=%t cleanup_enabled=%t\n", mode.Name, mode.RWProbeEnabled, mode.CleanupEnabled)
 	fmt.Fprintf(&b, "Summary: databases=%d collections=%d total_rows=%s total_binlog_size_bytes=%s pods=%d\n",
 		result.Summary.DatabaseCount,
 		result.Summary.CollectionCount,
@@ -202,6 +210,7 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		ExitCode   int                     `json:"exit_code"`
 		ElapsedMS  int64                   `json:"elapsed_ms"`
 		Summary    model.AnalysisSummary   `json:"summary"`
+		Mode       runModeSummary          `json:"mode"`
 		Probes     any                     `json:"probes"`
 		Inventory  *model.ClusterInventory `json:"inventory,omitempty"`
 		Warnings   []string                `json:"warnings,omitempty"`
@@ -240,6 +249,7 @@ func (JSONRenderer) Render(result *model.AnalysisResult, opts RenderOptions) ([]
 		ExitCode:   result.ExitCode,
 		ElapsedMS:  result.ElapsedMS,
 		Summary:    result.Summary,
+		Mode:       summarizeRunMode(result),
 		Probes: probeOutputSummary{
 			BusinessRead: businessReadSummary{
 				Enabled:           result.Probes.BusinessRead.Enabled,
@@ -355,4 +365,16 @@ func formatDatabases(databases []model.DatabaseInventory) string {
 		parts = append(parts, fmt.Sprintf("%s(%s)", database.Name, strings.Join(database.Collections, ", ")))
 	}
 	return strings.Join(parts, "; ")
+}
+
+func summarizeRunMode(result *model.AnalysisResult) runModeSummary {
+	mode := runModeSummary{
+		Name:           "safe",
+		RWProbeEnabled: result.Probes.RW.Enabled,
+		CleanupEnabled: result.Probes.RW.CleanupEnabled,
+	}
+	if mode.RWProbeEnabled {
+		mode.Name = "dangerous"
+	}
+	return mode
 }

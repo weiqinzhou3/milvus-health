@@ -100,7 +100,11 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 	var opts model.CheckOptions
 	command := &cobra.Command{
 		Use:   "check",
-		Short: "Run read-only health check",
+		Short: "Run health check (safe by default)",
+		Long: "Run a Milvus/Kubernetes health check.\n\n" +
+			"Default mode is safe: it collects inventory and read-only probe results without writing to Milvus.\n" +
+			"Dangerous RW mode must be enabled explicitly in config with probe.rw.enabled=true.\n" +
+			"The --cleanup flag only controls cleanup of resources created by the current RW probe run; it does not delete historical prefixed test databases.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.ConfigPath == "" {
 				return &model.AppError{Code: model.ErrCodeConfigInvalid, Message: "--config is required"}
@@ -137,7 +141,7 @@ func newCheckCmd(stdout, stderr io.Writer, runner cli.CheckRunner, factory rende
 	command.Flags().IntVar(&opts.TimeoutSec, "timeout", 0, "timeout in seconds")
 	command.Flags().StringVar((*string)(&opts.Format), "format", "", "output format: text|json")
 	command.Flags().BoolVar(&opts.Detail, "detail", false, "render detailed checks")
-	command.Flags().Bool("cleanup", false, "override probe.rw.cleanup")
+	command.Flags().Bool("cleanup", false, "override probe.rw.cleanup for current-run RW resources only (requires probe.rw.enabled=true)")
 	command.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("cleanup") {
 			value, err := cmd.Flags().GetBool("cleanup")

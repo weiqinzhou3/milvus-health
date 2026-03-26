@@ -31,7 +31,8 @@
   - query path
   - optional search path when `anns_field` is configured
 - RW Probe:
-  - stale prefixed database cleanup
+  - explicit dangerous-mode gating
+  - pre-existing test-database conflict detection
   - create database
   - create collection
   - insert
@@ -39,7 +40,7 @@
   - create index
   - load collection await
   - query closure
-  - optional cleanup
+  - optional cleanup for current-run resources only
 - Probe toggle behavior:
   - `probe.read.enabled=false` keeps the check item but returns `business-read-probe=skip`
   - message is `disabled by config`
@@ -77,3 +78,4 @@
 - Generated artifacts are compressed archives plus `checksums.txt`
 - `milvus-health version` is expected to report the release version from build-time metadata in tagged artifacts
 - Users should continue to validate against their own Milvus / Kubernetes topology before treating results as an operational gate
+- `check` is safe by default; real Milvus write traffic only happens when `probe.rw.enabled=true`

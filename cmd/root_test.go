@@ -72,6 +72,38 @@ func TestExecute_Check_ReturnsWarnExitCode(t *testing.T) {
 	}
 }
 
+func TestCheckHelp_DescribesSafeAndDangerousModes(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newApp(&stdout, &stderr, dependencies{
+		checkRunner:     fakeCheckRunner{},
+		validateRunner:  fakeValidateRunner{},
+		rendererFactory: render.DefaultRendererFactory{},
+		exitMapper:      cli.DefaultExitCodeMapper{},
+	})
+
+	exitCode := app.Execute([]string{"check", "--help"})
+	if exitCode != 0 {
+		t.Fatalf("Execute() = %d, want 0", exitCode)
+	}
+	out := stdout.String()
+	for _, token := range []string{
+		"Default mode is safe",
+		"probe.rw.enabled=true",
+		"does not delete historical prefixed test databases",
+		"override probe.rw.cleanup for current-run RW resources only",
+	} {
+		if !strings.Contains(out, token) {
+			t.Fatalf("help output missing %q: %s", token, out)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr should be empty, got %q", stderr.String())
+	}
+}
+
 func TestExecute_Check_ReturnsFailExitCode(t *testing.T) {
 	t.Parallel()
 

@@ -24,6 +24,11 @@
     "service_count": 1,
     "endpoint_count": 1
   },
+  "mode": {
+    "name": "dangerous",
+    "rw_probe_enabled": true,
+    "cleanup_enabled": true
+  },
   "probes": {
     "business_read": {
       "enabled": true,
@@ -55,7 +60,7 @@
       "cleanup_executed": true,
       "steps": [
         {
-          "name": "cleanup-stale-databases",
+          "name": "check-pre-existing-test-databases",
           "success": true,
           "duration_ms": 1
         },

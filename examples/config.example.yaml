@@ -72,16 +72,17 @@ probe:
 
   rw:
     # 是否启用读写探测
-    # true：会创建临时数据库/集合、写入、查询、清理
-    # false：跳过 RW Probe
-    enabled: true
+    # false：默认安全模式，不会真实写入 Milvus
+    # true：进入危险模式，会创建临时数据库/集合并执行真实写入
+    enabled: false
 
     # 临时测试数据库前缀
     # 当前 RW Probe 启用时该字段必填
     test_database_prefix: milvus_health_test
 
-    # 是否在探测结束后自动清理测试数据库/集合
-    cleanup: true
+    # 是否在探测结束后清理“本次运行创建”的测试数据库/集合
+    # 不会清理历史同前缀测试库；若历史测试库已存在，当前版本会直接 fail fast 并提示人工处理
+    cleanup: false
 
     # 写入测试数据行数
     insert_rows: 100

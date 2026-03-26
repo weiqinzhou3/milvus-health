@@ -20,7 +20,7 @@ This planned release marks the point where `main` should be described as an earl
 - Real Kubernetes client-go collection for pods, services, endpoints, request/limit facts, and metrics-server-backed usage
 - K8s pod / service / endpoint / resource enrichment
 - Business Read Probe with target-level evidence and `min_success_targets` handling
-- RW Probe with stale-test cleanup, create database, create collection, insert, flush, create-index, load-collection await, query, and optional cleanup
+- RW Probe with explicit dangerous-mode gating, pre-existing test-database conflict detection, create database, create collection, insert, flush, create-index, load-collection await, query, and optional current-run cleanup
 - `text` / `json` output, `--detail`, stable exit codes, and synced example config/output
 
 ### Compatibility
@@ -35,12 +35,14 @@ This planned release marks the point where `main` should be described as an earl
 - Real Milvus inventory collection for version, `arch_profile`, databases, collections, `row_count`, and `binlog_size_bytes`
 - Real Kubernetes client-go collection for pods, services, endpoints, request/limit facts, and metrics-server-backed usage
 - Real Business Read Probe with target-level evidence and `min_success_targets` handling
-- Real RW Probe with stale-test cleanup, create database, create collection, insert, flush, create-index, load-collection await, query, and optional cleanup
+- Real RW Probe with explicit dangerous-mode gating, pre-existing test-database conflict detection, create database, create collection, insert, flush, create-index, load-collection await, query, and optional current-run cleanup
 - Detail output for Milvus inventory, K8s inventory, Business Read Probe targets, RW Probe steps, and analyzer checks
 
 ### Changed
 
 - `main` is now documented as a real early deliverable with live inspection capability
+- `check` is now documented and rendered as safe-by-default, with explicit `safe` / `dangerous` mode output
+- Historical prefixed RW test databases are no longer deleted implicitly; conflicts now fail fast and require manual handling
 - README quickstart now documents the current build / validate / detail-mode check commands that were re-run during doc sync
 - Bundled output examples now track the current failure-path default output instead of stale pre-sync samples
 - README and project status wording no longer describe the project as skeleton, stub, or “no real SDK/client/inventory/probes”

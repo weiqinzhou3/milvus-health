@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,18 +43,25 @@ func (p DefaultRWProbe) Run(ctx context.Context, cfg *model.Config) (result mode
 	defer client.Close(ctx)
 
 	runID := p.now().UTC().UnixNano()
-	result.TestDatabase = fmt.Sprintf("%s_%d", cfg.Probe.RW.TestDatabasePrefix, runID)
 	result.TestCollection = rwProbeCollectionName
 
-	step := runProbeStep("cleanup-stale-databases", func() error {
-		return p.cleanupStaleTestDatabases(ctx, client, cfg.Probe.RW.TestDatabasePrefix)
+	step := runProbeStep("check-pre-existing-test-databases", func() error {
+		conflicts, err := p.findConflictingTestDatabases(ctx, client, cfg.Probe.RW.TestDatabasePrefix)
+		if err != nil {
+			return err
+		}
+		if len(conflicts) == 0 {
+			return nil
+		}
+		return fmt.Errorf("found existing test databases with prefix %q: %s; remove them manually or change probe.rw.test_database_prefix", cfg.Probe.RW.TestDatabasePrefix, strings.Join(conflicts, ", "))
 	})
 	result.StepResults = append(result.StepResults, step)
 	if !step.Success {
 		result.Status = model.CheckStatusFail
-		result.Message = fmt.Sprintf("pre-existing test data cleanup failed: %s", step.Error)
+		result.Message = fmt.Sprintf("pre-existing test database conflict: %s", step.Error)
 		return result, nil
 	}
+	result.TestDatabase = fmt.Sprintf("%s_%d", cfg.Probe.RW.TestDatabasePrefix, runID)
 
 	var createdDB bool
 	var createdCollection bool
@@ -181,29 +189,20 @@ func (p DefaultRWProbe) Run(ctx context.Context, cfg *model.Config) (result mode
 	return result, nil
 }
 
-func (p DefaultRWProbe) cleanupStaleTestDatabases(ctx context.Context, client platformmilvus.Client, prefix string) error {
+func (p DefaultRWProbe) findConflictingTestDatabases(ctx context.Context, client platformmilvus.Client, prefix string) ([]string, error) {
 	databases, err := client.ListDatabases(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	conflicts := make([]string, 0)
 	for _, database := range databases {
 		if !strings.HasPrefix(database, prefix+"_") {
 			continue
 		}
-		collections, err := client.ListCollections(ctx, database)
-		if err != nil {
-			return fmt.Errorf("list collections for stale database %q: %w", database, err)
-		}
-		for _, collection := range collections {
-			if err := client.DropCollection(ctx, database, collection); err != nil {
-				return fmt.Errorf("drop stale collection %q in database %q: %w", collection, database, err)
-			}
-		}
-		if err := client.DropDatabase(ctx, database); err != nil {
-			return fmt.Errorf("drop stale database %q: %w", database, err)
-		}
+		conflicts = append(conflicts, database)
 	}
-	return nil
+	sort.Strings(conflicts)
+	return conflicts, nil
 }
 
 func (p DefaultRWProbe) cleanupTestResources(ctx context.Context, client platformmilvus.Client, database, collection string, createdCollection bool) error {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/weiqinzhou3/milvus-health/internal/cli"
+	"github.com/weiqinzhou3/milvus-health/internal/config"
 	"github.com/weiqinzhou3/milvus-health/internal/model"
 	"github.com/weiqinzhou3/milvus-health/internal/probes"
 )
@@ -429,6 +430,85 @@ func TestCheckRunner_DoesNotRunRWProbeWhenDisabled(t *testing.T) {
 	}
 	if analyzer.input.Snapshot.RWProbe.Status != model.CheckStatusSkip || analyzer.input.Snapshot.RWProbe.Enabled {
 		t.Fatalf("Snapshot.RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
+	}
+}
+
+func TestCheckRunner_DefaultConfigStaysSafeAndSkipsRWProbe(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	rwProbe := &fakeRWProbe{
+		result: model.RWProbeResult{Status: model.CheckStatusPass, Enabled: true, Message: "should not run"},
+	}
+	runner := cli.DefaultCheckRunner{
+		Loader:          fakeLoader{cfg: &model.Config{}},
+		DefaultApplier:  config.DefaultValueApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{},
+		K8sCollector:    fakeK8sCollector{},
+		RWProbe:         rwProbe,
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if rwProbe.calls != 0 {
+		t.Fatalf("RWProbe.Run() calls = %d, want 0", rwProbe.calls)
+	}
+	if analyzer.input.Snapshot.RWProbe.Enabled {
+		t.Fatalf("Snapshot.RWProbe.Enabled = %t, want false", analyzer.input.Snapshot.RWProbe.Enabled)
+	}
+	if analyzer.input.Snapshot.RWProbe.CleanupEnabled {
+		t.Fatalf("Snapshot.RWProbe.CleanupEnabled = %t, want false", analyzer.input.Snapshot.RWProbe.CleanupEnabled)
+	}
+	if analyzer.input.Snapshot.RWProbe.Message != "rw probe disabled" {
+		t.Fatalf("Snapshot.RWProbe = %#v", analyzer.input.Snapshot.RWProbe)
+	}
+}
+
+func TestCheckRunner_DoesNotRunRWProbeWhenOnlyRWParamsAreConfigured(t *testing.T) {
+	t.Parallel()
+
+	analyzer := &fakeAnalyzer{result: &model.AnalysisResult{}}
+	rwProbe := &fakeRWProbe{
+		result: model.RWProbeResult{Status: model.CheckStatusPass, Enabled: true, Message: "should not run"},
+	}
+	runner := cli.DefaultCheckRunner{
+		Loader: fakeLoader{cfg: &model.Config{
+			Probe: model.ProbeConfig{
+				RW: model.RWProbeConfig{
+					Enabled:            false,
+					TestDatabasePrefix: "milvus_health_test",
+					Cleanup:            true,
+					InsertRows:         5,
+					VectorDim:          8,
+				},
+			},
+		}},
+		DefaultApplier:  fakeDefaultApplier{},
+		OverrideApplier: fakeOverrideApplier{},
+		Validator:       fakeValidator{},
+		MilvusCollector: fakeMilvusCollector{},
+		K8sCollector:    fakeK8sCollector{},
+		RWProbe:         rwProbe,
+		Analyzer:        analyzer,
+	}
+
+	_, err := runner.Run(context.Background(), model.CheckOptions{ConfigPath: "test.yaml"})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if rwProbe.calls != 0 {
+		t.Fatalf("RWProbe.Run() calls = %d, want 0", rwProbe.calls)
+	}
+	if analyzer.input.Snapshot.RWProbe.Enabled {
+		t.Fatalf("Snapshot.RWProbe = %#v, want RW probe to remain disabled", analyzer.input.Snapshot.RWProbe)
+	}
+	if !analyzer.input.Snapshot.RWProbe.CleanupEnabled {
+		t.Fatalf("Snapshot.RWProbe = %#v, want cleanup setting to remain visible", analyzer.input.Snapshot.RWProbe)
 	}
 }
 

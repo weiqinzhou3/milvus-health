@@ -24,6 +24,11 @@
     "service_count": 0,
     "endpoint_count": 0
   },
+  "mode": {
+    "name": "safe",
+    "rw_probe_enabled": false,
+    "cleanup_enabled": false
+  },
   "probes": {
     "business_read": {
       "enabled": true,
@@ -36,11 +41,10 @@
     },
     "rw": {
       "status": "skip",
-      "enabled": true,
+      "enabled": false,
       "insert_rows": 100,
       "vector_dim": 128,
-      "cleanup_enabled": true,
-      "message": "rw probe not executed"
+      "message": "rw probe disabled"
     }
   },
   "warnings": [

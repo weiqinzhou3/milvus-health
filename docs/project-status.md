@@ -1,6 +1,6 @@
 # milvus-health Project Status
 
-Last updated: 2026-03-24
+Last updated: 2026-03-26
 
 ## 1. Current conclusion
 
@@ -8,8 +8,9 @@ Last updated: 2026-03-24
 
 当前 `main` 可以被准确描述为：
 
-- 一个具备真实 Milvus / Kubernetes 巡检能力的早期可交付版本
+- 一个具备真实 Milvus / Kubernetes 巡检能力、默认安全的 beta 版本
 - `check` 已接入真实 Milvus SDK、真实 Kubernetes client-go、真实 inventory 采集，以及真实 Probe
+- `check` 默认运行 safe mode；只有显式开启 `probe.rw.enabled=true` 时才会进入 dangerous RW mode
 - `validate` 是独立的静态配置校验入口；真实环境连通性、inventory 与 probe 都在 `check` 中执行
 - `text` / `json` 输出、`--detail`、退出码、样例配置与样例输出都已经形成可用闭环
 
@@ -74,7 +75,7 @@ Last updated: 2026-03-24
   - `message = "disabled by config"`
   - `confidence = low`
 - RW Probe 已接入真实路径：
-  - cleanup stale prefixed databases
+  - check pre-existing test databases
   - create database
   - create collection
   - insert
@@ -82,7 +83,8 @@ Last updated: 2026-03-24
   - create-index
   - load-collection(await)
   - query
-  - optional cleanup
+  - optional cleanup for current-run resources only
+  - historical prefixed test databases now fail fast instead of being deleted implicitly
 
 ### 3.5 Output and analysis
 
@@ -115,6 +117,7 @@ Last updated: 2026-03-24
 - 当前 analyzer 仍然偏保守，尚未成为完整的 operator-grade 规则引擎
 - `standby` 路径仍未完全闭环；当前结果更偏向保守表达
 - RW Probe 当前是最小可用 query-based closure，还不是更完整的 search-verification 版本
+- 当前版本定位仍然是工程师陪同使用的 beta 工具，不应被描述为客户自助式“零风险”巡检工具
 - Business Read Probe 只有在配置 `anns_field` 时才会进入 search 分支
 - K8s 资源使用率依赖 `metrics-server` 与权限；缺失时按 degrade 语义处理
 - `binlog_size_bytes` 解析已覆盖当前验证过的 payload 形态，但尚未声称覆盖所有历史变体
@@ -136,6 +139,7 @@ Last updated: 2026-03-24
 本文件、[README.md](../README.md)、[CHANGELOG.md](../CHANGELOG.md)、[examples/output.text.example.txt](../examples/output.text.example.txt)、[examples/output.json.example.json](../examples/output.json.example.json) 应保持同步，统一反映：
 
 - `main` 已完成 P0 / P1 / P2
+- `check` 默认 safe mode，RW dangerous mode 需要显式开启
 - `probe.read.enabled=false` 的 disable toggle 已 merged
 - 仓库已具备真实巡检能力
-- 当前阶段是“早期可交付版本”，而不是 skeleton/stub
+- 当前阶段是“默认安全的 beta 版本”，而不是 skeleton/stub
