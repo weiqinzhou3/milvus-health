@@ -1,6 +1,6 @@
 # milvus-health Project Status
 
-Last updated: 2026-03-26
+Last updated: 2026-03-27
 
 ## 1. Current conclusion
 
@@ -128,7 +128,7 @@ Last updated: 2026-03-26
 - K8s 资源使用率依赖 `metrics-server` 与权限；缺失时按 degrade 语义处理
 - `binlog_size_bytes` 解析已覆盖当前验证过的 payload 形态，但尚未声称覆盖所有历史变体
 - [examples/config.example.yaml](../examples/config.example.yaml) 故意使用失败路径示例，便于快速演示 detail 输出；它不是生产环境配置
-- `version` 子命令的版本字符串仍是占位值，正式 release cut 时需要单独更新
+- 未打 tag 的源码构建仍会显示占位值 `dev`；正式 release 产物通过 `ldflags` 注入实际版本号
 
 ## 6. Validation status
 

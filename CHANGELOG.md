@@ -2,9 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.3.0] - Unreleased
+## [v0.3.1] - 2026-03-27
 
-This planned release marks the point where `main` should be described as an early deliverable with real Milvus and Kubernetes inspection, not a skeleton/stub repository.
+This patch release publishes the completed Phase 1 / Phase 2 line on top of the already-public `v0.3.0` baseline. It keeps the current beta positioning, but tightens the shipped safety boundary and config/output contract.
+
+### Highlights
+
+- `check` is now explicitly documented and rendered as safe-by-default, with visible `safe` / `dangerous` run mode output
+- RW Probe no longer performs implicit historical cleanup of prefixed test databases; pre-existing conflicts now fail fast and require manual handling
+- Phase 02 config/output fixes are now part of the shipped release: strict YAML known-field validation, `CLI explicit > YAML > default`, and YAML-driven `output.format` / `output.detail`
+- Business Read Probe skip / unavailable paths now render explicit messages instead of blank failure-path output
+- This remains an engineer-assisted beta release rather than a self-serve zero-risk operator platform
+
+### Changed
+
+- `check --help`, text output, and JSON output now expose the current run mode and cleanup intent
+- `probe.read.min_success_targets` validation is tightened to `>= 1`
+- `validate` and `check` now reject unknown YAML fields instead of silently ignoring them
+- Release packaging continues to use the existing GoReleaser-based Linux/macOS archive flow with `checksums.txt`
+
+### Known limitations
+
+- Dedicated MQ / MinIO / etcd health checks are not included yet
+- The analyzer remains conservative and is not yet a full operator-grade rule engine
+- `standby` handling is not fully closed beyond the current minimal severity / confidence path
+- RW Probe still ends at query-based closure and does not yet provide broader search-verification coverage
+- Business Read Probe only enters the search branch when `anns_field` is configured
+- Kubernetes resource usage still depends on metrics-server availability and permissions
+
+## [v0.3.0] - 2026-03-24
+
+This release marks the point where `main` should be described as an early deliverable with real Milvus and Kubernetes inspection, not a skeleton/stub repository.
 
 ### Highlights
 
